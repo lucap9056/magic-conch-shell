@@ -1,0 +1,6 @@
+go 1.25.6
+
+use ./core
+use ./grpcclient
+use ./discord
+use ./integrated/discord

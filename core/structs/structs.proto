@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package magic_conch_shell.v1;
+
+option go_package = "../structs";
+
+service AssistantService {
+  rpc Chat (Request) returns (Response);
+}
+
+// structs.PromptPart
+message PromptPart {
+  string type = 1;
+  string content = 2;
+  string mime_type = 3;
+}
+
+// structs.PromptMessage
+message PromptMessage {
+  repeated PromptPart parts = 1;
+}
+
+// grpcserver.Request
+message Request {
+  PromptMessage current_message = 1;
+  repeated PromptMessage history_messages = 2;
+}
+
+// grpcserver.Response
+message Response {
+  string reply = 1;
+}
