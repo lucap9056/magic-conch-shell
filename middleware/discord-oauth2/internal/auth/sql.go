@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"context"
 	"database/sql"
+	"log"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -21,7 +23,9 @@ type UserDevice struct {
 }
 
 type Database struct {
-	db *sql.DB
+	db     *sql.DB
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func NewDatabase(dsn string) (*Database, error) {
@@ -42,6 +46,26 @@ func NewDatabase(dsn string) (*Database, error) {
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
+	d := &Database{
+		db:     db,
+		ctx:    ctx,
+		cancel: cancel,
+	}
+
+	if err := d.initTables(); err != nil {
+		cancel()
+		return nil, err
+	}
+
+	go d.startCleanupWorker(24 * time.Hour)
+
+	return d, nil
+}
+
+func (d *Database) initTables() error {
+
 	query := `
 	CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -58,13 +82,16 @@ func NewDatabase(dsn string) (*Database, error) {
 		secret TEXT NOT NULL,
 		updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
-	);`
+	);
+	
+	CREATE INDEX IF NOT EXISTS idx_user_devices_updated_at 
+	ON user_devices (updated_at);`
 
-	if _, err := db.Exec(query); err != nil {
-		return nil, err
+	if _, err := d.db.Exec(query); err != nil {
+		return err
 	}
 
-	return &Database{db: db}, nil
+	return nil
 }
 
 func (d *Database) GetUserFromEmail(email string) (*User, error) {
@@ -138,4 +165,39 @@ func (d *Database) DeleteDevice(userID, deviceID string) error {
 	query := `DELETE FROM user_devices WHERE user_id = $1 AND device_id = $2`
 	_, err := d.db.Exec(query, userID, deviceID)
 	return err
+}
+
+func (d *Database) CleanupOldDevices() (int64, error) {
+	query := `
+    DELETE FROM user_devices 
+    WHERE updated_at < NOW() - INTERVAL '7 days';
+    `
+	result, err := d.db.Exec(query)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (d *Database) startCleanupWorker(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			query := `DELETE FROM user_devices WHERE updated_at < NOW() - INTERVAL '7 days'`
+			_, err := d.db.ExecContext(d.ctx, query)
+			if err != nil {
+				log.Println("Cleanup error:", err.Error())
+			}
+		case <-d.ctx.Done():
+			return
+		}
+	}
+}
+
+func (d *Database) Close() error {
+	d.cancel()
+	return d.db.Close()
 }

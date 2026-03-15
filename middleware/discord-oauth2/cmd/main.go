@@ -38,6 +38,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
+	defer db.Close()
 
 	jwtManager := auth.NewJWTManager(db, 15*time.Minute, 7*24*time.Hour)
 
