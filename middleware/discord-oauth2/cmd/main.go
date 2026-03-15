@@ -29,11 +29,12 @@ func main() {
 	envfile.Load()
 	life := lifecycle.New()
 
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "auth.db"
+	databaseUrl := os.Getenv("DATABASE_URL")
+	if databaseUrl == "" {
+		log.Fatal("Missing required DATA_SOURCE_NAME environment variable")
 	}
-	db, err := auth.NewDatabase(dbPath)
+
+	db, err := auth.NewDatabase(databaseUrl)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -126,18 +127,24 @@ func main() {
 			return
 		}
 
-		user, err := handler.GetUser(ctx, token)
+		discordUser, err := handler.GetUser(ctx, token)
 		if err != nil {
 			sendJSONResponse(w, false, "Failed to fetch user info", http.StatusInternalServerError, err)
 			return
 		}
 
-		if err := db.SaveUser(fmt.Sprint(user.ID), user.Username); err != nil {
+		user, err := db.GetUserFromEmail(discordUser.Email)
+		if err != nil {
 			sendJSONResponse(w, false, "Database error", http.StatusInternalServerError, err)
 			return
 		}
 
-		userID := fmt.Sprint(user.ID)
+		if user == nil {
+			sendJSONResponse(w, false, "User not found", http.StatusNotFound, nil)
+			return
+		}
+
+		userID := fmt.Sprint(user.UserID)
 		secret := jwtManager.GenerateRandomSecret()
 
 		deviceID, err := db.SaveDeviceSecret(userID, deviceName, secret)
@@ -178,7 +185,7 @@ func main() {
 
 		userID := claims.Subject
 
-		user, err := db.GetUser(userID)
+		user, err := db.GetUserFromID(userID)
 		if err != nil {
 			sendJSONResponse(w, false, "User not found", http.StatusUnauthorized, err)
 			return
@@ -213,7 +220,7 @@ func main() {
 			return
 		}
 
-		user, err := db.GetUser(claims.Subject)
+		user, err := db.GetUserFromID(claims.Subject)
 		if err != nil {
 			sendJSONResponse(w, false, "User not found", http.StatusUnauthorized, err)
 			return

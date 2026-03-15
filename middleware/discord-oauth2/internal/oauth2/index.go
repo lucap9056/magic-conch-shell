@@ -36,7 +36,7 @@ func NewHandler(clientID, clientSecret, redirectURL string) *Handler {
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
 			RedirectURL:  redirectURL,
-			Scopes:       []string{discord.ScopeIdentify},
+			Scopes:       []string{discord.ScopeIdentify, discord.ScopeEmail},
 			Endpoint:     discord.Endpoint,
 		},
 	}

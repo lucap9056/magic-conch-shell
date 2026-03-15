@@ -2,13 +2,15 @@ package auth
 
 import (
 	"database/sql"
+	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type User struct {
 	UserID   string
 	Username string
+	Email    string
 }
 
 type UserDevice struct {
@@ -22,36 +24,39 @@ type Database struct {
 	db *sql.DB
 }
 
-func NewDatabase(dbPath string) (*Database, error) {
-	db, err := sql.Open("sqlite", dbPath)
+func NewDatabase(dsn string) (*Database, error) {
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = db.Exec(`PRAGMA foreign_keys = ON;`)
-	if err != nil {
+	db.SetMaxOpenConns(20)
+
+	db.SetMaxIdleConns(15)
+
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	db.SetConnMaxIdleTime(2 * time.Minute)
+
+	if err := db.Ping(); err != nil {
 		return nil, err
 	}
 
 	query := `
+	CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 	CREATE TABLE IF NOT EXISTS users (
-		user_id TEXT PRIMARY KEY,
-		username TEXT NOT NULL
+		user_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+		username TEXT NOT NULL,
+		email TEXT NOT NULL UNIQUE
 	);
 
 	CREATE TABLE IF NOT EXISTS user_devices (
-		device_id TEXT PRIMARY KEY DEFAULT (
-			lower(hex(randomblob(4))) || '-' || 
-			lower(hex(randomblob(2))) || '-4' || 
-			substr(lower(hex(randomblob(2))),2) || '-' || 
-			substr('89ab',abs(random()) % 4 + 1, 1) || 
-			substr(lower(hex(randomblob(2))),2) || '-' || 
-			lower(hex(randomblob(6)))
-		),
+		device_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 		device_name TEXT NOT NULL,
-		user_id TEXT NOT NULL,
+		user_id UUID NOT NULL,
 		secret TEXT NOT NULL,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
 	);`
 
@@ -62,26 +67,35 @@ func NewDatabase(dbPath string) (*Database, error) {
 	return &Database{db: db}, nil
 }
 
-func (d *Database) SaveUser(userID, username string) error {
-	query := `
-	INSERT INTO users (user_id, username)
-	VALUES (?, ?)
-	ON CONFLICT(user_id) DO UPDATE SET 
-		username = excluded.username,
-	`
-	_, err := d.db.Exec(query, userID, username)
-	return err
-}
-
-func (d *Database) GetUser(userID string) (*User, error) {
+func (d *Database) GetUserFromEmail(email string) (*User, error) {
 	var user User
 	query := `
-	SELECT user_id, username
+	SELECT user_id, username, email
 	FROM users
-	WHERE user_id = ?;
+	WHERE email = $1;
 	`
-	err := d.db.QueryRow(query, userID).Scan(&user.UserID, &user.Username)
+	err := d.db.QueryRow(query, email).Scan(&user.UserID, &user.Username, &user.Email)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (d *Database) GetUserFromID(userID string) (*User, error) {
+	var user User
+	query := `
+	SELECT user_id, username, email
+	FROM users
+	WHERE user_id = $1;
+	`
+	err := d.db.QueryRow(query, userID).Scan(&user.UserID, &user.Username, &user.Email)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &user, nil
@@ -90,7 +104,7 @@ func (d *Database) GetUser(userID string) (*User, error) {
 func (d *Database) SaveDeviceSecret(userID, deviceName, secret string) (string, error) {
 	query := `
 	INSERT INTO user_devices (device_name, user_id, secret, updated_at)
-	VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
 	RETURNING device_id;
 	`
 	var deviceID string
@@ -104,8 +118,8 @@ func (d *Database) SaveDeviceSecret(userID, deviceName, secret string) (string, 
 func (d *Database) UpdateDeviceSecret(deviceID, secret string) error {
 	query := `
 	UPDATE user_devices 
-	SET secret = ?, updated_at = CURRENT_TIMESTAMP
-	WHERE device_id = ?;
+	SET secret = $1, updated_at = CURRENT_TIMESTAMP
+	WHERE device_id = $2;
 	`
 	_, err := d.db.Exec(query, secret, deviceID)
 	return err
@@ -113,7 +127,7 @@ func (d *Database) UpdateDeviceSecret(deviceID, secret string) error {
 
 func (d *Database) GetDeviceSecret(deviceID string) (string, error) {
 	var secret string
-	err := d.db.QueryRow("SELECT secret FROM user_devices WHERE device_id = ?", deviceID).Scan(&secret)
+	err := d.db.QueryRow("SELECT secret FROM user_devices WHERE device_id = $1", deviceID).Scan(&secret)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +135,7 @@ func (d *Database) GetDeviceSecret(deviceID string) (string, error) {
 }
 
 func (d *Database) DeleteDevice(userID, deviceID string) error {
-	query := `DELETE FROM user_devices WHERE user_id = ? AND device_id = ?`
+	query := `DELETE FROM user_devices WHERE user_id = $1 AND device_id = $2`
 	_, err := d.db.Exec(query, userID, deviceID)
 	return err
 }
