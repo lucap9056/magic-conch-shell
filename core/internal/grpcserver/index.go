@@ -16,12 +16,25 @@ type Server struct {
 	stopChan chan struct{}
 }
 
-func NewGRPCServer(asst *assistant.Client) *Server {
+func NewGRPCServer(asst *assistant.Client, opts ...ServerOption) (*Server, error) {
+	cfg := newDefaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	serverOpts, err := cfg.buildServerOptions()
+	if err != nil {
+		return nil, err
+	}
+
+	server := grpc.NewServer(serverOpts...)
 	stopChan := make(chan struct{})
+	structs.RegisterAssistantServiceServer(server, NewService(asst))
 	return &Server{
 		asst:     asst,
 		stopChan: stopChan,
-	}
+		server:   server,
+	}, nil
 }
 
 func (s *Server) Run(addr string) error {
@@ -29,9 +42,7 @@ func (s *Server) Run(addr string) error {
 	if err != nil {
 		return err
 	}
-	server := grpc.NewServer()
-	structs.RegisterAssistantServiceServer(server, NewService(s.asst))
-	s.server = server
+
 	err = s.server.Serve(listener)
 	if err != nil {
 		return err
