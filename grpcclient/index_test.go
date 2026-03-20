@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lucap9056/magic-conch-shell/core/structs"
-	"github.com/lucap9056/magic-conch-shell/grpcclient"
+	"github.com/lucap9056/magic-conch-shell/grpcclient/v2"
 )
 
 func TestAssistantClient(t *testing.T) {
