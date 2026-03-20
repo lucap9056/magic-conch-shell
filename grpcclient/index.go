@@ -7,21 +7,31 @@ import (
 	"github.com/lucap9056/magic-conch-shell/core/structs"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Client struct {
+	conn    *grpc.ClientConn
 	service structs.AssistantServiceClient
 }
 
-func NewAssistantClient(address string) (*Client, error) {
+func NewAssistantClient(ctx context.Context, address string, opts ...clientOption) (*Client, error) {
 
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cfg := newDefaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	dialOpts, err := cfg.buildDialOptions()
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := grpc.NewClient(address, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("did not connect: %w", err)
 	}
 
-	client := &Client{structs.NewAssistantServiceClient(conn)}
+	client := &Client{conn, structs.NewAssistantServiceClient(conn)}
 	return client, nil
 }
 
@@ -32,4 +42,11 @@ func (c *Client) Chat(ctx context.Context, currentMessage *structs.PromptMessage
 	})
 
 	return resp.Reply, err
+}
+
+func (c *Client) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }
