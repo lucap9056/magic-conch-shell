@@ -41,7 +41,11 @@ func (c *Client) Chat(ctx context.Context, currentMessage *structs.PromptMessage
 		HistoryMessages: historyMessages,
 	})
 
-	return resp.Reply, err
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Reply, nil
 }
 
 func (c *Client) Close() error {
