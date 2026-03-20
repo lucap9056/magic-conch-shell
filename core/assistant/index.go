@@ -130,23 +130,33 @@ func (c *Client) safeExecuteLua(luaCode string) (string, error) {
 
 	L.SetMx(10 * 1024 * 1024)
 
-	for _, lib := range []struct {
-		name string
-		open lua.LGFunction
-	}{
-		{lua.BaseLibName, lua.OpenBase},
-		{lua.TabLibName, lua.OpenTable},
-		{lua.StringLibName, lua.OpenString},
-		{lua.MathLibName, lua.OpenMath},
-	} {
-		L.Push(L.NewFunction(lib.open))
-		L.Push(lua.LString(lib.name))
-		L.Call(1, 0)
+	libs := []lua.LGFunction{
+		lua.OpenBase,
+		lua.OpenTable,
+		lua.OpenString,
+		lua.OpenMath,
+	}
+	for _, openFn := range libs {
+		L.Push(L.NewFunction(openFn))
+		if err := L.PCall(0, 0, nil); err != nil {
+			return "Failed to load Lua libraries.", err
+		}
 	}
 
-	L.GetField(L.GetGlobal("math"), "randomseed")
-	L.Push(lua.LNumber(time.Now().UnixNano()))
-	L.Call(1, 0)
+	mathLib := L.GetGlobal("math")
+	if mathTable, ok := mathLib.(*lua.LTable); ok {
+		randomseedFn := L.GetField(mathTable, "randomseed")
+		err := L.CallByParam(lua.P{
+			Fn:      randomseedFn,
+			NRet:    0,
+			Protect: true,
+		}, lua.LNumber(time.Now().UnixNano()%1e9))
+		if err != nil {
+			return "Failed to initialize random number generator.", err
+		}
+	} else {
+		return "Failed to initialize random number generator.", errors.New("math library is not a table")
+	}
 
 	if err := L.DoString(luaRuntimeScript); err != nil {
 		return "Failed to initialize execution engine.", err
