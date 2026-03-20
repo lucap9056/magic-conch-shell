@@ -62,41 +62,6 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string) (*Cl
 
 // GenerateResponse sends a message (and optional images) to the LLM and processes the Lua-formatted output.
 func (c *Client) GenerateResponse(ctx context.Context, newMessage *structs.PromptMessage, historyMessages []*structs.PromptMessage) (string, error) {
-	// Initialize Lua VM for result processing
-	L := lua.NewState(lua.Options{
-		SkipOpenLibs: true,
-	})
-	defer L.Close()
-
-	{
-		safeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		L.SetContext(safeCtx)
-	}
-
-	for _, lib := range []struct {
-		name string
-		open lua.LGFunction
-	}{
-		{lua.BaseLibName, lua.OpenBase},
-		{lua.TabLibName, lua.OpenTable},
-		{lua.StringLibName, lua.OpenString},
-		{lua.MathLibName, lua.OpenMath},
-	} {
-		L.Push(L.NewFunction(lib.open))
-		L.Push(lua.LString(lib.name))
-		L.Call(1, 0)
-	}
-
-	seed := time.Now().UnixNano()
-	L.GetField(L.GetGlobal("math"), "randomseed")
-	L.Push(lua.LNumber(seed))
-	L.Call(1, 0)
-
-	if err := L.DoString(luaRuntimeScript); err != nil {
-		log.Printf("error: failed to initialize Lua runtime: %v", err)
-		return "System error: Failed to initialize the selection engine.", fmt.Errorf("lua runtime initialization failed: %w", err)
-	}
 
 	model := c.genaiClient.GenerativeModel(c.modelName)
 
