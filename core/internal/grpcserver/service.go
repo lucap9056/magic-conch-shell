@@ -4,16 +4,19 @@ import (
 	"context"
 	"log"
 
-	"github.com/lucap9056/magic-conch-shell/core/assistant"
 	"github.com/lucap9056/magic-conch-shell/core/structs"
 )
 
-type AssistantService struct {
-	structs.UnimplementedAssistantServiceServer
-	asst *assistant.Client
+type AssistantClient interface {
+	GenerateResponse(ctx context.Context, newMessage *structs.PromptMessage, historyMessages []*structs.PromptMessage) (string, error)
 }
 
-func NewService(asst *assistant.Client) *AssistantService {
+type AssistantService struct {
+	structs.UnimplementedAssistantServiceServer
+	asst AssistantClient
+}
+
+func NewService(asst AssistantClient) *AssistantService {
 	return &AssistantService{asst: asst}
 }
 

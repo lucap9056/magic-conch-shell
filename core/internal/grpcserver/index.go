@@ -3,7 +3,6 @@ package grpcserver
 import (
 	"net"
 
-	"github.com/lucap9056/magic-conch-shell/core/assistant"
 	"github.com/lucap9056/magic-conch-shell/core/structs"
 
 	"google.golang.org/grpc"
@@ -12,11 +11,11 @@ import (
 type Server struct {
 	structs.UnimplementedAssistantServiceServer
 	server   *grpc.Server
-	asst     *assistant.Client
+	asst     AssistantClient
 	stopChan chan struct{}
 }
 
-func NewGRPCServer(asst *assistant.Client, opts ...ServerOption) (*Server, error) {
+func NewGRPCServer(asst AssistantClient, opts ...ServerOption) (*Server, error) {
 	cfg := newDefaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
