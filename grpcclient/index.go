@@ -14,7 +14,7 @@ type Client struct {
 	service structs.AssistantServiceClient
 }
 
-func NewAssistantClient(ctx context.Context, address string, opts ...clientOption) (*Client, error) {
+func NewAssistantClient(ctx context.Context, address string, opts ...ClientOption) (*Client, error) {
 
 	cfg := newDefaultConfig()
 	for _, opt := range opts {

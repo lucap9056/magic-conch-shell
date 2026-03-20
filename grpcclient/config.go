@@ -27,7 +27,7 @@ type clientConfig struct {
 	ExtraOptions []grpc.DialOption
 }
 
-type clientOption func(*clientConfig)
+type ClientOption func(*clientConfig)
 
 func newDefaultConfig() *clientConfig {
 	return &clientConfig{
@@ -37,26 +37,26 @@ func newDefaultConfig() *clientConfig {
 	}
 }
 
-func WithTimeout(timeout time.Duration) clientOption {
+func WithTimeout(timeout time.Duration) ClientOption {
 	return func(c *clientConfig) {
 		c.Timeout = timeout
 	}
 }
 
-func WithTLSCA(caPath string) clientOption {
+func WithTLSCA(caPath string) ClientOption {
 	return func(c *clientConfig) {
 		c.TLS.CAPath = caPath
 	}
 }
 
-func WithTLSCert(certPath, keyPath string) clientOption {
+func WithTLSCert(certPath, keyPath string) ClientOption {
 	return func(c *clientConfig) {
 		c.TLS.CertPath = certPath
 		c.TLS.KeyPath = keyPath
 	}
 }
 
-func WithDialOptions(opts ...grpc.DialOption) clientOption {
+func WithDialOptions(opts ...grpc.DialOption) ClientOption {
 	return func(c *clientConfig) {
 		c.ExtraOptions = append(c.ExtraOptions, opts...)
 	}
