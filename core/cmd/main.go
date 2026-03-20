@@ -93,6 +93,7 @@ func main() {
 			return
 		}
 		go func() {
+			log.Printf("[gRPC Server] Listening on %s\n", grpcAddress)
 			err := grpcServer.Run(grpcAddress)
 			if err != nil {
 				log.Printf("[gRPC Server] Error: %v\n", err)
