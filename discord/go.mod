@@ -7,7 +7,7 @@ require (
 	github.com/lucap9056/go-envfile v1.1.0
 	github.com/lucap9056/go-lifecycle v1.2.0
 	github.com/lucap9056/magic-conch-shell/core v1.0.0
-	github.com/lucap9056/magic-conch-shell/grpcclient v1.0.0
+	github.com/lucap9056/magic-conch-shell/grpcclient/v2 v2.0.1
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.46.1
 )

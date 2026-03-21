@@ -28,8 +28,8 @@ github.com/lucap9056/go-lifecycle v1.2.0 h1:EjNaHFHfPPJQzHFP45jO3WcABGr53acsrrhk
 github.com/lucap9056/go-lifecycle v1.2.0/go.mod h1:rNny6T4zFnRTf0/tAZFMAy0vAJHrDwjmpQAF7Q0HSZ4=
 github.com/lucap9056/magic-conch-shell/core v1.0.0 h1:3QcHS2+Z7k9twadD4/3cyj/ixLmj0Ts3wcd5Aa0DI4I=
 github.com/lucap9056/magic-conch-shell/core v1.0.0/go.mod h1:HyCb62/YQUOTwV0rqX5OJEhQZJGcxO4Ownsu6hT7wgA=
-github.com/lucap9056/magic-conch-shell/grpcclient v1.0.0 h1:4Gtj7mW0Wdi0nFk7WjVGdkpMgc1WOX2nnxsWSjyJGws=
-github.com/lucap9056/magic-conch-shell/grpcclient v1.0.0/go.mod h1:vbG6rl598rLLhqj7BZf+XT+le6Iy8q8B0byLOJ4BdMI=
+github.com/lucap9056/magic-conch-shell/grpcclient/v2 v2.0.1 h1:q5h1vkKnHKiSBUQpyIUQ+zfAy5ps56bQOlBIi0/hfKo=
+github.com/lucap9056/magic-conch-shell/grpcclient/v2 v2.0.1/go.mod h1:vQSAH/6Ohzym0UqTL+U55P2NSUsfuLyV/kRCTdC1eCQ=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=
