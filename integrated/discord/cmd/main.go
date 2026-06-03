@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/lucap9056/magic-conch-shell/core/assistant"
+	"github.com/lucap9056/magic-conch-shell/core/v2/assistant"
 	"github.com/lucap9056/magic-conch-shell/discord/discordclient"
 
 	"github.com/lucap9056/go-envfile/envfile"
@@ -19,6 +19,7 @@ func main() {
 	modelName := os.Getenv("MODEL_NAME")
 	allowedImageDomains := os.Getenv("ALLOWED_IMAGE_DOMAINS")
 	discordToken := os.Getenv("DISCORD_TOKEN")
+	language := os.Getenv("LANG")
 
 	asst, err := assistant.NewClient(apiKey, modelName, allowedImageDomains)
 	if err != nil {
@@ -26,7 +27,7 @@ func main() {
 		return
 	}
 
-	discord, err := discordclient.New(discordToken, asst.GenerateResponse)
+	discord, err := discordclient.New(discordToken, language, asst.GenerateResponse)
 	if err != nil {
 		life.Exitln(err)
 		return
