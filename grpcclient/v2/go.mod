@@ -1,0 +1,16 @@
+module github.com/lucap9056/magic-conch-shell/grpcclient/v2
+
+go 1.25.6
+
+require (
+	github.com/lucap9056/magic-conch-shell/core/v2 v2.0.0-20260603041034-408d0c0bedef
+	google.golang.org/grpc v1.79.2
+)
+
+require (
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
+)
