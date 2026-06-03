@@ -22,6 +22,7 @@ func main() {
 	grpcCAPath := os.Getenv("GRPC_TLS_CA")
 	grpcCertPath := os.Getenv("GRPC_TLS_CERT")
 	grpcKeyPath := os.Getenv("GRPC_TLS_KEY")
+	language := os.Getenv("LANG")
 
 	assistantClientOptions := []grpcclient.ClientOption{}
 	if grpcCAPath != "" {
@@ -40,7 +41,7 @@ func main() {
 		return
 	}
 
-	discord, err := discordclient.New(discordToken, llm.Chat)
+	discord, err := discordclient.New(discordToken, language, llm.Chat)
 	if err != nil {
 		life.Exitln(err)
 		return

@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucap9056/magic-conch-shell/core/structs"
+	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
+	"github.com/lucap9056/magic-conch-shell/core/v2/structs/languages"
 
 	COMMANDS "github.com/lucap9056/magic-conch-shell/discord/internal/commands"
 	OPTIONS "github.com/lucap9056/magic-conch-shell/discord/internal/options"
@@ -15,15 +16,16 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-type GenerateResponse = func(context.Context, *structs.PromptMessage, []*structs.PromptMessage) (string, error)
+type GenerateResponse = func(context.Context, languages.Language, *structs.PromptMessage, []*structs.PromptMessage) (string, error)
 
 type DiscordClient struct {
 	session          *discordgo.Session
 	channels         *GuildResponseChannels
 	generateResponse GenerateResponse
+	language         languages.Language
 }
 
-func New(token string, generateResponse GenerateResponse) (*DiscordClient, error) {
+func New(token string, language string, generateResponse GenerateResponse) (*DiscordClient, error) {
 
 	channels, err := newGuildResponseChannels()
 	if err != nil {
@@ -37,7 +39,9 @@ func New(token string, generateResponse GenerateResponse) (*DiscordClient, error
 		return nil, fmt.Errorf("failed to create Discord session: %w", err)
 	}
 
-	client := &DiscordClient{session, channels, generateResponse}
+	lang, _ := languages.Parse(language)
+
+	client := &DiscordClient{session, channels, generateResponse, lang}
 
 	session.AddHandler(client.interactionCreateHandler)
 	session.AddHandler(client.messageCreateHandler)
@@ -130,7 +134,9 @@ func (client *DiscordClient) interactionCreateHandler(session *discordgo.Session
 			},
 		}
 
-		reply, err := client.generateResponse(ctx, req, nil)
+		lang, _ := languages.Parse(interaction.Locale.String())
+
+		reply, err := client.generateResponse(ctx, lang, req, nil)
 
 		if err != nil {
 
@@ -205,7 +211,7 @@ func (client *DiscordClient) messageCreateHandler(session *discordgo.Session, me
 	// Convert current message to LLM prompt message
 	currentUserMessage := client.convertDiscordMessageToPrompt(message.Message)
 
-	response, err := client.generateResponse(ctx, currentUserMessage, promptMessages)
+	response, err := client.generateResponse(ctx, client.language, currentUserMessage, promptMessages)
 	if err != nil {
 		log.Printf("Failed to generate response for message %s: %v", message.ID, err)
 		log.Printf("Message content: %s", content)
