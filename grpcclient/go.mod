@@ -1,4 +1,4 @@
-module github.com/lucap9056/magic-conch-shell/grpcclient/v2
+module github.com/lucap9056/magic-conch-shell/grpcclient
 
 go 1.25.6
 
