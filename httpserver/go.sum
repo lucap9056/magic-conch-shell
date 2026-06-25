@@ -14,10 +14,10 @@ github.com/lucap9056/go-envfile v1.1.0 h1:cc2KGPhqoZIG1UgN8s3VvtcJzbuSxkhMjC5i61
 github.com/lucap9056/go-envfile v1.1.0/go.mod h1:5rifasJVs+xLsGmteEAhUFBBSi7UWnoPveTm0nAE3SM=
 github.com/lucap9056/go-lifecycle v1.2.0 h1:EjNaHFHfPPJQzHFP45jO3WcABGr53acsrrhkmTpXlro=
 github.com/lucap9056/go-lifecycle v1.2.0/go.mod h1:rNny6T4zFnRTf0/tAZFMAy0vAJHrDwjmpQAF7Q0HSZ4=
-github.com/lucap9056/magic-conch-shell/core v1.0.0 h1:3QcHS2+Z7k9twadD4/3cyj/ixLmj0Ts3wcd5Aa0DI4I=
-github.com/lucap9056/magic-conch-shell/core v1.0.0/go.mod h1:HyCb62/YQUOTwV0rqX5OJEhQZJGcxO4Ownsu6hT7wgA=
-github.com/lucap9056/magic-conch-shell/grpcclient v1.0.0 h1:4Gtj7mW0Wdi0nFk7WjVGdkpMgc1WOX2nnxsWSjyJGws=
-github.com/lucap9056/magic-conch-shell/grpcclient v1.0.0/go.mod h1:vbG6rl598rLLhqj7BZf+XT+le6Iy8q8B0byLOJ4BdMI=
+github.com/lucap9056/magic-conch-shell/core/v2 v2.0.0-20260603041034-408d0c0bedef h1:GLJHdp5HcrEmZNlzns4biAx2j4KVoywF6VpTf7eG1wE=
+github.com/lucap9056/magic-conch-shell/core/v2 v2.0.0-20260603041034-408d0c0bedef/go.mod h1:KhUbgHPHnGus8LVlM+sBLpyv8ylmB3F72Gq9bVfIR5E=
+github.com/lucap9056/magic-conch-shell/grpcclient/v2 v2.0.0-20260603042831-93bfb30bcf45 h1:N//k+dTtJ8ogrVzdBulwFVYwwkkGKolq3YqiCUUfDps=
+github.com/lucap9056/magic-conch-shell/grpcclient/v2 v2.0.0-20260603042831-93bfb30bcf45/go.mod h1:LgZ3FoVeITcekG7CZFkGf9vpt73RwI4Fwv/zdLWgUUc=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
 go.opentelemetry.io/otel v1.39.0 h1:8yPrr/S0ND9QEfTfdP9V+SiwT4E0G7Y5MO7p85nis48=

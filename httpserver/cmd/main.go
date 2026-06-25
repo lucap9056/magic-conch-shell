@@ -13,8 +13,8 @@ import (
 
 	"github.com/lucap9056/go-envfile/envfile"
 	"github.com/lucap9056/go-lifecycle/lifecycle"
-	"github.com/lucap9056/magic-conch-shell/core/structs"
-	"github.com/lucap9056/magic-conch-shell/grpcclient"
+	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
+	grpcclient "github.com/lucap9056/magic-conch-shell/grpcclient/v2"
 )
 
 type Response struct {
@@ -29,7 +29,7 @@ func main() {
 	httpAddress := os.Getenv("HTTP_ADDRESS")
 	grpcAddress := os.Getenv("GRPC_ADDRESS")
 
-	assistant, err := grpcclient.NewAssistantClient(grpcAddress)
+	assistant, err := grpcclient.NewAssistantClient(context.Background(), grpcAddress)
 	if err != nil {
 		life.Exitln(err.Error())
 		return
@@ -59,7 +59,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
 		defer cancel()
 
-		reply, err := assistant.Chat(ctx, req.CurrentMessage, req.HistoryMessages)
+		reply, err := assistant.Chat(ctx, req.Language, req.CurrentMessage, req.HistoryMessages)
 		if err != nil {
 			sendJSONResponse(w, false, err.Error(), http.StatusInternalServerError)
 			return
