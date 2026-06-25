@@ -1,1 +1,0 @@
-module github.com/lucap9056/magic-conch-shell
