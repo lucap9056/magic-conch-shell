@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lucap9056/go-envfile/envfile"
@@ -73,8 +76,15 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	listener, err := newListener(httpAddress)
+	if err != nil {
+		life.Exitln(err.Error())
+		return
+	}
+	defer listener.Close()
+
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			life.Exitln(err.Error())
 		}
 	}()
@@ -89,6 +99,33 @@ func main() {
 	})
 
 	life.Wait()
+}
+
+func newListener(addr string) (net.Listener, error) {
+	if after, ok := strings.CutPrefix(addr, "unix://"); ok {
+		if err := os.MkdirAll(filepath.Dir(after), 0777); err != nil {
+			return nil, err
+		}
+		temp := after + ".temp"
+		os.Remove(temp)
+		os.Remove(after)
+		l, err := net.Listen("unix", temp)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(temp, 0666); err != nil {
+			l.Close()
+			os.Remove(temp)
+			return nil, err
+		}
+		if err := os.Rename(temp, after); err != nil {
+			l.Close()
+			os.Remove(temp)
+			return nil, err
+		}
+		return l, nil
+	}
+	return net.Listen("tcp", addr)
 }
 
 func sendJSONResponse(w http.ResponseWriter, success bool, message string, code int) {
