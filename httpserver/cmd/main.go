@@ -4,17 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/lucap9056/go-envfile/envfile"
 	"github.com/lucap9056/go-lifecycle/lifecycle"
 	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
 	grpcclient "github.com/lucap9056/magic-conch-shell/grpcclient/v2"
+	"github.com/lucap9056/magic-conch-shell/httpserver/httputil"
 )
 
 type Response struct {
@@ -28,6 +26,7 @@ func main() {
 
 	httpAddress := os.Getenv("HTTP_ADDRESS")
 	grpcAddress := os.Getenv("GRPC_ADDRESS")
+	corsOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
 
 	assistant, err := grpcclient.NewAssistantClient(context.Background(), grpcAddress)
 	if err != nil {
@@ -70,13 +69,13 @@ func main() {
 
 	server := &http.Server{
 		Addr:         httpAddress,
-		Handler:      mux,
+		Handler:      httputil.CORS(mux, corsOrigins),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
-	listener, err := newListener(httpAddress)
+	listener, err := httputil.NewListener(httpAddress)
 	if err != nil {
 		life.Exitln(err.Error())
 		return
@@ -99,33 +98,6 @@ func main() {
 	})
 
 	life.Wait()
-}
-
-func newListener(addr string) (net.Listener, error) {
-	if after, ok := strings.CutPrefix(addr, "unix://"); ok {
-		if err := os.MkdirAll(filepath.Dir(after), 0777); err != nil {
-			return nil, err
-		}
-		temp := after + ".temp"
-		os.Remove(temp)
-		os.Remove(after)
-		l, err := net.Listen("unix", temp)
-		if err != nil {
-			return nil, err
-		}
-		if err := os.Chmod(temp, 0666); err != nil {
-			l.Close()
-			os.Remove(temp)
-			return nil, err
-		}
-		if err := os.Rename(temp, after); err != nil {
-			l.Close()
-			os.Remove(temp)
-			return nil, err
-		}
-		return l, nil
-	}
-	return net.Listen("tcp", addr)
 }
 
 func sendJSONResponse(w http.ResponseWriter, success bool, message string, code int) {
