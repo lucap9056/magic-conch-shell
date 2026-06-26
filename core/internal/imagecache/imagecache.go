@@ -8,26 +8,35 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v4"
 	"github.com/google/generative-ai-go/genai"
+	"github.com/lucap9056/magic-conch-shell/core/internal/imagecache/embedcache"
+	"github.com/lucap9056/magic-conch-shell/core/internal/imagecache/rediscache"
 )
 
+const expiration = 24 * time.Hour
+
+type Database interface {
+	Get(key string) (string, error)
+	Set(key string, value string) error
+	Close() error
+}
+
 type Cache struct {
-	db          *badger.DB
+	db          Database
 	client      *genai.Client
 	expiration  time.Duration
 	maxFileSize int64
 	whitelist   *DomainWhitelist
 }
 
-func NewCache(dir string, client *genai.Client, allowedDomains string) (*Cache, error) {
-	opts := badger.DefaultOptions(dir).WithLogger(nil)
-	db, err := badger.Open(opts)
+func NewCache(path string, client *genai.Client, allowedDomains string) (*Cache, error) {
+	db, err := initDB(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open badger db: %w", err)
+		return nil, err
 	}
 
 	var whitelist *DomainWhitelist
@@ -42,6 +51,13 @@ func NewCache(dir string, client *genai.Client, allowedDomains string) (*Cache, 
 		maxFileSize: 20 * 1024 * 1024,
 		whitelist:   whitelist,
 	}, nil
+}
+
+func initDB(path string) (Database, error) {
+	if strings.HasPrefix(path, "redis://") {
+		return rediscache.NewStore(path, expiration)
+	}
+	return embedcache.NewStore(path, expiration)
 }
 
 func (c *Cache) Close() error {
@@ -62,23 +78,12 @@ func (c *Cache) Fetch(ctx context.Context, mimeType string, urlString string) (s
 		return "", fmt.Errorf("invalid url: %w", err)
 	}
 
-	var fileURI string
-	err = c.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(key))
-		if err != nil {
-			return err
-		}
-		return item.Value(func(val []byte) error {
-			fileURI = string(val)
-			return nil
-		})
-	})
-
+	fileURI, err := c.db.Get(key)
 	if err == nil {
 		return fileURI, nil
 	}
-	if err != badger.ErrKeyNotFound {
-		return "", fmt.Errorf("badger db error: %w", err)
+	if err != os.ErrNotExist {
+		return "", fmt.Errorf("db error: %w", err)
 	}
 
 	return c.downloadAndUploadToGemini(ctx, mimeType, urlString, key)
@@ -119,12 +124,8 @@ func (c *Cache) downloadAndUploadToGemini(ctx context.Context, mimeType string, 
 		return "", fmt.Errorf("failed to upload to gemini: %w", err)
 	}
 
-	err = c.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry([]byte(key), []byte(file.URI)).WithTTL(c.expiration)
-		return txn.SetEntry(e)
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to save to badger: %w", err)
+	if err := c.db.Set(key, file.URI); err != nil {
+		return "", fmt.Errorf("failed to save to db: %w", err)
 	}
 
 	return file.URI, nil
