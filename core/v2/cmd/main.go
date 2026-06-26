@@ -29,6 +29,7 @@ func main() {
 	apiKey := os.Getenv("LLM_API_KEY")
 	modelName := os.Getenv("MODEL_NAME")
 	allowedImageDomains := os.Getenv("ALLOWED_IMAGE_DOMAINS")
+	imageCachePath := os.Getenv("IMAGE_CACHE_PATH")
 	grpcAddress := os.Getenv("GRPC_ADDRESS")
 	grpcCert := os.Getenv("GRPC_TLS_CERT")
 	grpcKey := os.Getenv("GRPC_TLS_KEY")
@@ -81,7 +82,11 @@ func main() {
 		serverOptions = append(serverOptions, grpcserver.WithKeepalive(params))
 	}
 
-	asst, err := assistant.NewClient(apiKey, modelName, allowedImageDomains)
+	var options []assistant.Option
+	if imageCachePath != "" {
+		options = append(options, assistant.WithCachePath(imageCachePath))
+	}
+	asst, err := assistant.NewClient(apiKey, modelName, allowedImageDomains, options...)
 	if err != nil {
 		life.Exitln(err)
 		return

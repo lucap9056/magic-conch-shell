@@ -40,16 +40,21 @@ type Client struct {
 }
 
 // NewClient initializes a new LLM client with a predefined system prompt and conversation history.
-func NewClient(apiKey string, modelName string, allowedImageDomains string) (*Client, error) {
-	ctx := context.Background()
+func NewClient(apiKey string, modelName string, allowedImageDomains string, opts ...Option) (*Client, error) {
+	options := defaultOptions()
+	for _, opt := range opts {
+		opt(options)
+	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
 	// Initialize Google AI SDK
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Google AI client: %w", err)
 	}
 
-	imageCache, err := imagecache.NewCache("image_cache", client, allowedImageDomains)
+	imageCache, err := imagecache.NewCache(options.cachePath, client, allowedImageDomains)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize image cache: %w", err)
 	}
