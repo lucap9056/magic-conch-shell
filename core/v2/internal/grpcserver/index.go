@@ -1,9 +1,8 @@
 package grpcserver
 
 import (
-	"net"
-
 	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
+	"github.com/lucap9056/magic-conch-shell/httpserver/httputil"
 
 	"google.golang.org/grpc"
 )
@@ -37,7 +36,7 @@ func NewGRPCServer(asst AssistantClient, opts ...ServerOption) (*Server, error) 
 }
 
 func (s *Server) Run(addr string) error {
-	listener, err := net.Listen("tcp", addr)
+	listener, err := httputil.NewListener(addr)
 	if err != nil {
 		return err
 	}

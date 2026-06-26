@@ -97,6 +97,8 @@ github.com/lucap9056/go-lifecycle v1.2.0 h1:EjNaHFHfPPJQzHFP45jO3WcABGr53acsrrhk
 github.com/lucap9056/go-lifecycle v1.2.0/go.mod h1:rNny6T4zFnRTf0/tAZFMAy0vAJHrDwjmpQAF7Q0HSZ4=
 github.com/lucap9056/magic-conch-shell/core v1.2.0 h1:e4JvolFpHqmf1bIVhsVGrjWHRzAj4eApUfjtcg2/1Qc=
 github.com/lucap9056/magic-conch-shell/core v1.2.0/go.mod h1:ftLyl/6DWXct0LbTdMM0vo0DU/pZToQ8W3bXmCRGFmI=
+github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.0 h1:D4rdShgM0B08W+gnLJ4IaBWnGjTz9nUYj3NQQLyXhuk=
+github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.0/go.mod h1:MXEbWlTAyqGtUklyE5h+7c57q6+freVA9Bgh8WlxTE8=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10/go.mod h1:t/avpk3KcrXxUnYOhZhMXJlSEyie6gQbtLq5NM3loB8=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

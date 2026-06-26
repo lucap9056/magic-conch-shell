@@ -7,6 +7,7 @@ require (
 	github.com/lucap9056/go-envfile v1.1.0
 	github.com/lucap9056/go-lifecycle v1.2.0
 	github.com/lucap9056/magic-conch-shell/core v1.2.0
+	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.0
 	github.com/yuin/gopher-lua v1.1.1
 	google.golang.org/api v0.186.0
 	google.golang.org/grpc v1.79.2
