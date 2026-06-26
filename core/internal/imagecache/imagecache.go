@@ -73,7 +73,7 @@ func (c *Cache) Fetch(ctx context.Context, mimeType string, urlString string) (s
 		return "", fmt.Errorf("domain %s is not in whitelist", u.Hostname())
 	}
 
-	key, err := c.urlToKey(urlString)
+	key, err := c.urlToKey(u)
 	if err != nil {
 		return "", fmt.Errorf("invalid url: %w", err)
 	}
@@ -89,13 +89,9 @@ func (c *Cache) Fetch(ctx context.Context, mimeType string, urlString string) (s
 	return c.downloadAndUploadToGemini(ctx, mimeType, urlString, key)
 }
 
-func (c *Cache) urlToKey(urlString string) (string, error) {
-	u, err := url.Parse(urlString)
-	if err != nil {
-		return "", err
-	}
-	u.RawQuery = ""
-	hash := sha256.Sum256([]byte(u.String()))
+func (c *Cache) urlToKey(url *url.URL) (string, error) {
+	url.RawQuery = ""
+	hash := sha256.Sum256([]byte(url.String()))
 	return hex.EncodeToString(hash[:]), nil
 }
 
