@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/lucap9056/go-envfile v1.1.0
 	github.com/lucap9056/go-lifecycle v1.2.0
+	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.0
 	github.com/redis/go-redis/v9 v9.21.0
 	google.golang.org/api v0.186.0
 )

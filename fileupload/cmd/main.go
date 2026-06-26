@@ -7,17 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/google/uuid"
 	"github.com/lucap9056/go-envfile/envfile"
 	"github.com/lucap9056/go-lifecycle/lifecycle"
+	"github.com/lucap9056/magic-conch-shell/httpserver/httputil"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/api/option"
 )
@@ -34,6 +32,7 @@ type Config struct {
 	GeminiAPIKey string
 	RedisURL     string
 	RdxHostname  string
+	CROSOrigins  string
 }
 
 func loadConfig() Config {
@@ -46,6 +45,7 @@ func loadConfig() Config {
 		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
 		RedisURL:     os.Getenv("REDIS_URL"),
 		RdxHostname:  rdxHostname,
+		CROSOrigins:  os.Getenv("CORS_ALLOWED_ORIGINS"),
 	}
 }
 
@@ -134,7 +134,7 @@ func main() {
 		sendJSON(w, true, UploadMessage{Key: rdxKey, MimeType: mimeType}, http.StatusOK)
 	})
 
-	listener, err := newListener(cfg.HTTPAddress)
+	listener, err := httputil.NewListener(cfg.HTTPAddress)
 	if err != nil {
 		life.Exitln(err.Error())
 		return
@@ -143,7 +143,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:         cfg.HTTPAddress,
-		Handler:      mux,
+		Handler:      httputil.CORS(mux, cfg.CROSOrigins),
 		ReadTimeout:  35 * time.Second,
 		WriteTimeout: 40 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -165,33 +165,6 @@ func main() {
 	})
 
 	life.Wait()
-}
-
-func newListener(addr string) (net.Listener, error) {
-	if after, ok := strings.CutPrefix(addr, "unix://"); ok {
-		if err := os.MkdirAll(filepath.Dir(after), 0777); err != nil {
-			return nil, err
-		}
-		temp := after + ".temp"
-		os.Remove(temp)
-		os.Remove(after)
-		l, err := net.Listen("unix", temp)
-		if err != nil {
-			return nil, err
-		}
-		if err := os.Chmod(temp, 0666); err != nil {
-			l.Close()
-			os.Remove(temp)
-			return nil, err
-		}
-		if err := os.Rename(temp, after); err != nil {
-			l.Close()
-			os.Remove(temp)
-			return nil, err
-		}
-		return l, nil
-	}
-	return net.Listen("tcp", addr)
 }
 
 func sendJSON[T any](w http.ResponseWriter, success bool, message T, code int) {
