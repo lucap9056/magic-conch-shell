@@ -5,12 +5,7 @@ go 1.25.6
 require (
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/google/generative-ai-go v0.20.1
-	github.com/lucap9056/go-envfile v1.1.0
-	github.com/lucap9056/go-lifecycle v1.2.0
-	github.com/yuin/gopher-lua v1.1.1
-	google.golang.org/api v0.186.0
-	google.golang.org/grpc v1.79.2
-	google.golang.org/protobuf v1.36.10
+	github.com/redis/go-redis/v9 v9.21.0
 )
 
 require (
@@ -34,7 +29,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
-	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.51.0 // indirect
@@ -50,6 +44,9 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
+	google.golang.org/api v0.186.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/grpc v1.79.2 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
 )
