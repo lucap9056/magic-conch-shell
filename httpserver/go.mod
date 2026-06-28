@@ -5,9 +5,9 @@ go 1.25.6
 require (
 	github.com/lucap9056/go-envfile v1.1.0
 	github.com/lucap9056/go-lifecycle v1.2.0
-	github.com/lucap9056/magic-conch-shell/core/v2 v2.0.0-20260603041034-408d0c0bedef
-	github.com/lucap9056/magic-conch-shell/grpcclient/v2 v2.0.0-20260603042831-93bfb30bcf45
-	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.0
+	github.com/lucap9056/magic-conch-shell/core/v2 v2.0.1
+	github.com/lucap9056/magic-conch-shell/grpcclient/v2 v2.0.2
+	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.1
 )
 
 require (

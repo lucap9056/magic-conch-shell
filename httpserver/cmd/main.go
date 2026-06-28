@@ -28,7 +28,15 @@ func main() {
 	grpcAddress := os.Getenv("GRPC_ADDRESS")
 	corsOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
 
-	assistant, err := grpcclient.NewAssistantClient(context.Background(), grpcAddress)
+	var grpcOpts []grpcclient.ClientOption
+	if cert := os.Getenv("GRPC_TLS_CERT"); cert != "" {
+		grpcOpts = append(grpcOpts, grpcclient.WithTLSCert(cert, os.Getenv("GRPC_TLS_KEY")))
+	}
+	if ca := os.Getenv("GRPC_TLS_CA"); ca != "" {
+		grpcOpts = append(grpcOpts, grpcclient.WithTLSCA(ca))
+	}
+
+	assistant, err := grpcclient.NewAssistantClient(context.Background(), grpcAddress, grpcOpts...)
 	if err != nil {
 		life.Exitln(err.Error())
 		return
