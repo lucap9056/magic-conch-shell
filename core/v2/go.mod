@@ -1,13 +1,15 @@
 module github.com/lucap9056/magic-conch-shell/core/v2
 
-go 1.25.6
+go 1.24.0
+
+retract v2.0.0
 
 require (
 	github.com/google/generative-ai-go v0.20.1
 	github.com/lucap9056/go-envfile v1.1.0
 	github.com/lucap9056/go-lifecycle v1.2.0
-	github.com/lucap9056/magic-conch-shell/core v1.2.0
-	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.0
+	github.com/lucap9056/magic-conch-shell/core v1.2.1
+	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.1
 	github.com/yuin/gopher-lua v1.1.1
 	google.golang.org/api v0.186.0
 	google.golang.org/grpc v1.79.2
@@ -22,7 +24,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/longrunning v0.5.7 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/dgraph-io/badger/v4 v4.9.1 // indirect
+	github.com/dgraph-io/badger/v4 v4.9.2 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
