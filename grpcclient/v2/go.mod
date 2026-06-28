@@ -1,9 +1,9 @@
 module github.com/lucap9056/magic-conch-shell/grpcclient/v2
 
-go 1.25.6
+go 1.24.0
 
 require (
-	github.com/lucap9056/magic-conch-shell/core/v2 v2.0.0-20260603041034-408d0c0bedef
+	github.com/lucap9056/magic-conch-shell/core/v2 v2.0.1
 	google.golang.org/grpc v1.79.2
 )
 
