@@ -28,6 +28,7 @@ func main() {
 
 	apiKey := os.Getenv("LLM_API_KEY")
 	modelName := os.Getenv("MODEL_NAME")
+	consoleMode := os.Getenv("CONSOLE_MODE")
 	allowedImageDomains := os.Getenv("ALLOWED_IMAGE_DOMAINS")
 	imageCachePath := os.Getenv("IMAGE_CACHE_PATH")
 	grpcAddress := os.Getenv("GRPC_ADDRESS")
@@ -119,7 +120,9 @@ func main() {
 		log.Println("LLM test successful, response:", result)
 	}
 
-	go runConsoleMode(asst, life)
+	if consoleMode == "true" {
+		go runConsoleMode(asst, life)
+	}
 
 	life.Wait()
 }
