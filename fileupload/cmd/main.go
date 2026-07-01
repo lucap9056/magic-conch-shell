@@ -6,9 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
@@ -65,6 +68,11 @@ func main() {
 
 	cfg := loadConfig()
 
+	_ = mime.AddExtensionType(".png", "image/png")
+	_ = mime.AddExtensionType(".jpg", "image/jpeg")
+	_ = mime.AddExtensionType(".jpeg", "image/jpeg")
+	_ = mime.AddExtensionType(".webp", "image/webp")
+
 	ctx := context.Background()
 
 	genaiClient, err := genai.NewClient(ctx, option.WithAPIKey(cfg.GeminiAPIKey))
@@ -103,9 +111,27 @@ func main() {
 		}
 		defer file.Close()
 
-		mimeType := header.Header.Get("Content-Type")
+		buf := make([]byte, 512)
+		n, err := file.Read(buf)
+		if err != nil && err != io.EOF {
+			sendJSON(w, r, false, fmt.Sprintf("failed to read file buffer: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		mimeType := http.DetectContentType(buf[:n])
 		if mimeType == "" {
-			mimeType = "image/jpeg"
+			mimeType = mime.TypeByExtension(filepath.Ext(header.Filename))
+		}
+
+		if mimeType == "" {
+			sendJSON(w, r, false, "unknown mime type", http.StatusBadRequest)
+			return
+		}
+
+		_, err = file.Seek(0, io.SeekStart)
+		if err != nil {
+			sendJSON(w, r, false, fmt.Sprintf("failed to reset file pointer: %v", err), http.StatusInternalServerError)
+			return
 		}
 
 		uploadCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
