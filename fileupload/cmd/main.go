@@ -92,13 +92,13 @@ func main() {
 	mux.HandleFunc("POST /upload", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
 		if err := r.ParseMultipartForm(maxFileSize); err != nil {
-			sendJSON(w, false, "file too large or invalid multipart form", http.StatusBadRequest)
+			sendJSON(w, r, false, "file too large or invalid multipart form", http.StatusBadRequest)
 			return
 		}
 
 		file, header, err := r.FormFile("file")
 		if err != nil {
-			sendJSON(w, false, "missing file field", http.StatusBadRequest)
+			sendJSON(w, r, false, "missing file field", http.StatusBadRequest)
 			return
 		}
 		defer file.Close()
@@ -115,7 +115,7 @@ func main() {
 			MIMEType: mimeType,
 		})
 		if err != nil {
-			sendJSON(w, false, fmt.Sprintf("upload to gemini failed: %v", err), http.StatusInternalServerError)
+			sendJSON(w, r, false, fmt.Sprintf("upload to gemini failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
@@ -127,11 +127,11 @@ func main() {
 		defer cancel()
 
 		if err := redisClient.Set(setCtx, cacheKey, geminiFile.URI, cacheTTL).Err(); err != nil {
-			sendJSON(w, false, fmt.Sprintf("redis store failed: %v", err), http.StatusInternalServerError)
+			sendJSON(w, r, false, fmt.Sprintf("redis store failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		sendJSON(w, true, UploadMessage{Key: rdxKey, MimeType: mimeType}, http.StatusOK)
+		sendJSON(w, r, true, UploadMessage{Key: rdxKey, MimeType: mimeType}, http.StatusOK)
 	})
 
 	listener, err := httputil.NewListener(cfg.HTTPAddress)
@@ -167,8 +167,13 @@ func main() {
 	life.Wait()
 }
 
-func sendJSON[T any](w http.ResponseWriter, success bool, message T, code int) {
+func sendJSON[T any](w http.ResponseWriter, r *http.Request, success bool, message T, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
+	if code == http.StatusInternalServerError {
+		log.Printf("[ERROR] %s %s (%s): %v", r.Method, r.URL.Path, r.RemoteAddr, message)
+		json.NewEncoder(w).Encode(Response[string]{Success: false, Message: "internal server error"})
+		return
+	}
 	json.NewEncoder(w).Encode(Response[T]{Success: success, Message: message})
 }
