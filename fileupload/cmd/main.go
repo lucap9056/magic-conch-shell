@@ -2,30 +2,25 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"mime"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
-	"github.com/google/uuid"
 	"github.com/lucap9056/go-envfile/envfile"
 	"github.com/lucap9056/go-lifecycle/lifecycle"
+	"github.com/lucap9056/magic-conch-shell/fileupload/internal/hashutil"
+	"github.com/lucap9056/magic-conch-shell/fileupload/internal/mimetype"
+	"github.com/lucap9056/magic-conch-shell/fileupload/internal/uploader"
 	"github.com/lucap9056/magic-conch-shell/httpserver/httputil"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/api/option"
 )
 
 const (
-	redisKeyPrefix     = "image_cache:"
-	cacheTTL           = 24 * time.Hour
 	maxFileSize        = 20 * 1024 * 1024
 	defaultRdxHostname = "rediscache"
 )
@@ -57,31 +52,11 @@ type Response[T any] struct {
 	Message T    `json:"message"`
 }
 
-type UploadMessage struct {
-	Key      string `json:"key"`
-	MimeType string `json:"mime_type"`
-}
-
-var allowedMimeTypes = map[string]bool{
-	"image/png":  true,
-	"image/jpeg": true,
-	"image/webp": true,
-	"image/heif": true,
-	"image/heic": true,
-}
-
 func main() {
 	envfile.Load()
 	life := lifecycle.New()
 
 	cfg := loadConfig()
-
-	_ = mime.AddExtensionType(".png", "image/png")
-	_ = mime.AddExtensionType(".jpg", "image/jpeg")
-	_ = mime.AddExtensionType(".jpeg", "image/jpeg")
-	_ = mime.AddExtensionType(".webp", "image/webp")
-	_ = mime.AddExtensionType(".heif", "image/heif")
-	_ = mime.AddExtensionType(".heic", "image/heic")
 
 	ctx := context.Background()
 
@@ -99,6 +74,8 @@ func main() {
 	}
 	redisClient := redis.NewClient(redisOpts)
 	defer redisClient.Close()
+
+	imgUploader := uploader.New(redisClient, genaiClient, cfg.RdxHostname)
 
 	mux := http.NewServeMux()
 
@@ -121,54 +98,29 @@ func main() {
 		}
 		defer file.Close()
 
-		buf := make([]byte, 512)
-		n, err := file.Read(buf)
-		if err != nil && err != io.EOF {
-			sendJSON(w, r, false, fmt.Sprintf("failed to read file buffer: %v", err), http.StatusInternalServerError)
+		mimeType, err := mimetype.Detect(file, header.Filename)
+		if err != nil {
+			sendJSON(w, r, false, fmt.Sprintf("failed to read file: %v", err), http.StatusInternalServerError)
 			return
 		}
-
-		mimeType := http.DetectContentType(buf[:n])
-		log.Println(mimeType)
-		if mimeType == "application/octet-stream" {
-			mimeType = mime.TypeByExtension(filepath.Ext(header.Filename))
-		}
-
-		if !allowedMimeTypes[mimeType] {
+		if !mimetype.IsAllowed(mimeType) {
 			sendJSON(w, r, false, fmt.Sprintf("unsupported file type: %s. Only PNG, JPEG, WEBP, HEIF, and HEIC are allowed", mimeType), http.StatusBadRequest)
 			return
 		}
 
-		_, err = file.Seek(0, io.SeekStart)
+		fileHash, err := hashutil.SHA256Hex(file)
 		if err != nil {
-			sendJSON(w, r, false, fmt.Sprintf("failed to reset file pointer: %v", err), http.StatusInternalServerError)
+			sendJSON(w, r, false, fmt.Sprintf("failed to hash file: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		uploadCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		defer cancel()
-
-		geminiFile, err := genaiClient.UploadFile(uploadCtx, "", file, &genai.UploadFileOptions{
-			MIMEType: mimeType,
-		})
+		uploadMsg, err := imgUploader.Upload(file, mimeType, fileHash)
 		if err != nil {
-			sendJSON(w, r, false, fmt.Sprintf("upload to gemini failed: %v", err), http.StatusInternalServerError)
+			sendJSON(w, r, false, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		rdxKey := "rdx://" + cfg.RdxHostname + "/" + uuid.New().String()
-		hash := sha256.Sum256([]byte(rdxKey))
-		cacheKey := redisKeyPrefix + hex.EncodeToString(hash[:])
-
-		setCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := redisClient.Set(setCtx, cacheKey, geminiFile.URI, cacheTTL).Err(); err != nil {
-			sendJSON(w, r, false, fmt.Sprintf("redis store failed: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		sendJSON(w, r, true, UploadMessage{Key: rdxKey, MimeType: mimeType}, http.StatusOK)
+		sendJSON(w, r, true, uploadMsg, http.StatusOK)
 	})
 
 	listener, err := httputil.NewListener(cfg.HTTPAddress)
