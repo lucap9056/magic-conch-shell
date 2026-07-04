@@ -1,0 +1,357 @@
+openapi: 3.0.3
+info:
+  title: Magic Conch Shell — Integration Gateway
+  description: >
+    Public HTTP surface of the `examples/` stack, as seen by a client hitting the
+    Caddy gateway on `https://localhost`. All internal traffic (nautrouds → backend
+    services) runs over Unix domain sockets and is not directly reachable; every
+    path below is reachable only through the gateway, which routes it per
+    `examples/nautrouds/Ntufile`.
+  version: "2.2.0"
+externalDocs:
+  description: Service-by-service notes
+  url: ./README.md
+servers:
+  - url: https://localhost
+    description: Gateway (self-signed cert, trust examples/certs/gatewayCA.cert)
+
+tags:
+  - name: health
+  - name: oauth2-provider
+    description: Test-only OIDC/OAuth2 provider stub (auto-approves everything). See README.md#oauth2-provider
+  - name: auth
+    description: auth-service (oauth2-middleware) — session/JWT management. See README.md#auth-service
+  - name: chat
+    description: magic-conch-api (httpserver). See README.md#magic-conch-api
+  - name: upload
+    description: fileupload service. See README.md#fileupload
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Gateway liveness check
+      description: Answered directly by nautrouds' built-in `$health` virtual service — never reaches a backend container.
+      responses:
+        "200":
+          description: OK
+          content:
+            text/plain:
+              schema: { type: string, example: "OK" }
+
+  /oauth2/.well-known/openid-configuration:
+    get:
+      tags: [oauth2-provider]
+      summary: OIDC discovery document
+      responses:
+        "200":
+          description: Discovery document
+          content:
+            application/json:
+              schema: { type: object }
+
+  /oauth2/auth:
+    get:
+      tags: [oauth2-provider]
+      summary: Authorization endpoint (test stub — grants unconditionally, no login UI, no credential check)
+      parameters:
+        - { name: response_type, in: query, schema: { type: string, enum: [code] }, example: code }
+        - { name: client_id, in: query, schema: { type: string } }
+        - { name: redirect_uri, in: query, required: true, schema: { type: string, format: uri } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: code_challenge, in: query, required: true, schema: { type: string } }
+        - { name: code_challenge_method, in: query, schema: { type: string, enum: [S256] } }
+        - { name: scope, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: Redirect to redirect_uri with `code` and `state` query params. No consent/login step.
+          headers:
+            Location: { schema: { type: string, format: uri } }
+
+  /oauth2/token:
+    post:
+      tags: [oauth2-provider]
+      summary: Token endpoint (test stub — issues an unsigned `alg:none` id_token)
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [code, code_verifier]
+              properties:
+                grant_type: { type: string, example: authorization_code }
+                code: { type: string }
+                code_verifier: { type: string }
+                redirect_uri: { type: string }
+                client_id: { type: string }
+      responses:
+        "200":
+          description: Token response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string, example: Bearer }
+                  expires_in: { type: integer, example: 3600 }
+                  id_token: { type: string, description: "Unsigned (alg:none) JWT — test only, do not trust its signature" }
+
+  /oauth2/userinfo:
+    get:
+      tags: [oauth2-provider]
+      summary: Userinfo endpoint — returns the fixed identity baked into the provider's env vars (USER_SUB/USER_EMAIL/USER_NAME)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Fixed test identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sub: { type: string }
+                  email: { type: string }
+                  name: { type: string }
+
+  /auth/login:
+    get:
+      tags: [auth]
+      summary: Start login — get the provider authorize URL
+      responses:
+        "200":
+          description: Authorize URL (and PKCE verifier, if server-side PKCE holds it — this deployment's default)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiEnvelope"
+                  - type: object
+                    properties:
+                      message:
+                        type: object
+                        properties:
+                          url: { type: string, format: uri }
+                          verifier: { type: string, description: "Only present when the client is expected to hold the PKCE verifier (OAUTH2_CLIENT_PKCE=true). Unused in this deployment's default flow." }
+
+  /auth/callback:
+    get:
+      tags: [auth]
+      summary: Finish login — exchange the provider's code for a Magic Conch Shell JWT session
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: X-Device-Name, in: header, schema: { type: string }, description: "Optional label stored in user_devices.device_name" }
+        - { name: X-PKCE-Verifier, in: header, schema: { type: string }, description: "Required only if OAUTH2_CLIENT_PKCE=true" }
+      responses:
+        "200":
+          description: Issued session
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiEnvelope"
+                  - type: object
+                    properties:
+                      message: { $ref: "#/components/schemas/TokenPair" }
+        "400": { description: "Missing/invalid code or state" }
+        "401": { description: "State not found / expired (login flow timed out)" }
+
+  /auth/verify:
+    get:
+      tags: [auth]
+      summary: Validate an access token (also used internally by nautrouds as a chained auth middleware for /api/*)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204":
+          description: Valid token. Identity is returned via response headers, which nautrouds injects into the forwarded request.
+          headers:
+            X-Forwarded-User-ID: { schema: { type: string } }
+            X-Forwarded-Device-ID: { schema: { type: string } }
+        "401":
+          description: Missing/invalid/expired token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the refresh token and issue a new access+refresh pair
+      description: >
+        Refresh token can be supplied as a `refresh_token` cookie, an `Authorization` header,
+        or a `refresh_token` field in the JSON body — any one of the three.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: New session
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiEnvelope"
+                  - type: object
+                    properties:
+                      message: { $ref: "#/components/schemas/TokenPair" }
+        "401": { description: "Invalid/expired/revoked refresh token" }
+
+  /auth/refresh-access:
+    post:
+      tags: [auth]
+      summary: Exchange a refresh token for a new access token only (no rotation of the refresh token)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: New access token
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiEnvelope"
+                  - type: object
+                    properties:
+                      message: { type: string, description: "New access token (plain string, not a token pair)" }
+        "401": { description: "Invalid/expired/revoked refresh token" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current device session
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
+
+  /auth/users/me:
+    delete:
+      tags: [auth]
+      summary: Delete the authenticated user and all of their devices
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
+        "401": { description: "Missing/invalid token" }
+
+  /api/upload:
+    post:
+      tags: [upload]
+      summary: Upload an image for use in a chat message
+      description: >
+        JWT is validated by the gateway (nautrouds chains `auth-service(/verify)` before
+        forwarding) — the fileupload service itself never sees the token.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "PNG, JPEG, WEBP, HEIF or HEIC only, max 20MB"
+      responses:
+        "200":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiEnvelope"
+                  - type: object
+                    properties:
+                      message:
+                        type: object
+                        properties:
+                          key: { type: string, description: "Opaque rdx:// reference — pass this as PromptPart.content for an image part" }
+                          mime_type: { type: string }
+        "400": { description: "Missing file, file too large, or unsupported MIME type" }
+        "401": { description: "Missing/invalid token" }
+
+  /api/:
+    post:
+      tags: [chat]
+      summary: Send a chat message to the assistant
+      description: JWT is validated by the gateway the same way as /api/upload.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatRequest" }
+      responses:
+        "200":
+          description: Assistant reply
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
+        "400": { description: "Malformed request / unknown JSON fields / missing current_message" }
+        "401": { description: "Missing/invalid token" }
+        "500": { description: "LLM call failed" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ApiEnvelope:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: {}
+    ApiEnvelopeString:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+    PromptPart:
+      type: object
+      required: [type, content]
+      properties:
+        type: { type: string, enum: [text, image] }
+        content: { type: string, description: "Text content, or the `key` returned by /api/upload for an image part" }
+        mime_type: { type: string, description: "Required when type=image" }
+    PromptMessage:
+      type: object
+      properties:
+        parts:
+          type: array
+          items: { $ref: "#/components/schemas/PromptPart" }
+    ChatRequest:
+      type: object
+      required: [current_message]
+      properties:
+        language: { type: string, enum: [en, zh], description: "Defaults to en if omitted/unrecognized" }
+        current_message: { $ref: "#/components/schemas/PromptMessage" }
+        history_messages:
+          type: array
+          items: { $ref: "#/components/schemas/PromptMessage" }
