@@ -24,26 +24,38 @@ graph TD
     User --> Web[Web/HTTP Client]
     
     Discord -- gRPC --> Core[Core Service]
-    Web -- HTTP --> HTTP[HTTP Server]
+    Web -- HTTP chat --> HTTP[HTTP Server]
+    Web -- HTTP upload --> FileUpload[File Upload Service]
     HTTP -- gRPC --> Core
     
     subgraph "Core Service"
         Gemini[Google Gemini API]
         Lua[Lua Sandbox Engine]
-        Cache[(BadgerDB Image Cache)]
     end
     
-    Core <--> Gemini
     Core --> Lua
+    Core <--> Gemini
+    
+    ImageCache[(Image Cache<br/>BadgerDB, or Redis via IMAGE_CACHE_PATH)]
+    FileUpload -- upload --> Gemini
+    FileUpload -. store rdx:// ref .-> ImageCache
+    Core -. resolve rdx:// ref .-> ImageCache
 ```
+
+`FileUpload` and `Core` share the same image cache: `FileUpload` uploads an image
+to Gemini once and stores an opaque `rdx://` reference to it, `Core` resolves
+that reference later instead of re-uploading — see `examples/README.md` for a
+full walkthrough of this handoff in a real deployment.
 
 ## Directory Structure
 
 - `/core`: Core logic, including AI parser, Lua execution environment, and gRPC server.
 - `/discord`: Discord bot frontend implementation.
 - `/httpserver`: HTTP API wrapper layer.
+- `/fileupload`: HTTP service for uploading images ahead of a chat request (see diagram above).
 - `/grpcclient`: Common gRPC client package.
 - `/integrated`: Lightweight version integrating core services and frontends into a single process.
+- `/examples`: Full Docker Compose deployment (gateway, OAuth2/JWT auth, all services) with its own [README](examples/README.md) and [OpenAPI spec](examples/openapi.yml).
 
 ## Quick Start
 

@@ -24,26 +24,37 @@ graph TD
     User --> Web[Web/HTTP Client]
     
     Discord -- gRPC --> Core[Core Service]
-    Web -- HTTP --> HTTP[HTTP Server]
+    Web -- HTTP 聊天 --> HTTP[HTTP Server]
+    Web -- HTTP 上傳 --> FileUpload[File Upload Service]
     HTTP -- gRPC --> Core
     
     subgraph "Core Service"
         Gemini[Google Gemini API]
         Lua[Lua Sandbox Engine]
-        Cache[(BadgerDB Image Cache)]
     end
     
-    Core <--> Gemini
     Core --> Lua
+    Core <--> Gemini
+    
+    ImageCache[(圖片快取<br/>BadgerDB, 或透過 IMAGE_CACHE_PATH 改用 Redis)]
+    FileUpload -- 上傳 --> Gemini
+    FileUpload -. 儲存 rdx:// 參照 .-> ImageCache
+    Core -. 解析 rdx:// 參照 .-> ImageCache
 ```
+
+`FileUpload` 與 `Core` 共用同一份圖片快取：`FileUpload` 把圖片上傳到 Gemini 一次
+後存下一個不透明的 `rdx://` 參照，之後 `Core` 直接解析這個參照即可，不需重新上
+傳——完整的實際部署流程可參考 [`examples/README.md`](examples/README.md)。
 
 ## 目錄說明
 
 - `/core`: 核心邏輯，包含 AI 解析器、Lua 執行環境與 gRPC 伺服器。
 - `/discord`: Discord 機器人前端實現。
 - `/httpserver`: 基於 HTTP 的 API 轉發層。
+- `/fileupload`: 在聊天請求之前先上傳圖片用的 HTTP 服務（見上方架構圖）。
 - `/grpcclient`: 通用的 gRPC 客戶端封裝。
 - `/integrated`: 將核心服務與特定前端（如 Discord）整合在同一個行程中的輕量級版本。
+- `/examples`: 完整的 Docker Compose 部署範例（gateway、OAuth2/JWT 認證、所有服務），內含自己的 [README](examples/README.md) 與 [OpenAPI 規格](examples/openapi.yml)。
 
 ## 快速開始
 
