@@ -62,6 +62,14 @@ type UploadMessage struct {
 	MimeType string `json:"mime_type"`
 }
 
+var allowedMimeTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/webp": true,
+	"image/heif": true,
+	"image/heic": true,
+}
+
 func main() {
 	envfile.Load()
 	life := lifecycle.New()
@@ -72,6 +80,8 @@ func main() {
 	_ = mime.AddExtensionType(".jpg", "image/jpeg")
 	_ = mime.AddExtensionType(".jpeg", "image/jpeg")
 	_ = mime.AddExtensionType(".webp", "image/webp")
+	_ = mime.AddExtensionType(".heif", "image/heif")
+	_ = mime.AddExtensionType(".heic", "image/heic")
 
 	ctx := context.Background()
 
@@ -119,12 +129,13 @@ func main() {
 		}
 
 		mimeType := http.DetectContentType(buf[:n])
-		if mimeType == "" {
+		log.Println(mimeType)
+		if mimeType == "application/octet-stream" {
 			mimeType = mime.TypeByExtension(filepath.Ext(header.Filename))
 		}
 
-		if mimeType == "" {
-			sendJSON(w, r, false, "unknown mime type", http.StatusBadRequest)
+		if !allowedMimeTypes[mimeType] {
+			sendJSON(w, r, false, fmt.Sprintf("unsupported file type: %s. Only PNG, JPEG, WEBP, HEIF, and HEIC are allowed", mimeType), http.StatusBadRequest)
 			return
 		}
 
