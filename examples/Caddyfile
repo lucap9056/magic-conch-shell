@@ -1,0 +1,6 @@
+{$CADDY_HOST:0.0.0.0}:{$GATEWAY_PORT:443} {
+	tls {$TLS_CERT_FILE:/etc/caddy/certs/gateway.crt} {$TLS_KEY_FILE:/etc/caddy/certs/gateway.key}
+	route {
+		reverse_proxy unix//var/run/nautrouds/entrypoints/nautrouds-0.sock
+	}
+}

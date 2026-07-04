@@ -1,0 +1,19 @@
+# OIDC/OAuth2 endpoints — authtest stub, trim /oauth2 prefix before forwarding
+*/oauth2/* oauth2-provider
+    $PathTrimPrefix(/oauth2)
+
+# Auth service routes (public, strip /auth prefix before forwarding)
+*/auth/* auth-service
+    $PathTrimPrefix(/auth)
+
+# File upload (JWT required, routed to fileupload service)
+POST */api/upload fileupload
+    auth-service(/verify)
+    $PathTrimPrefix(/api)
+
+# All other API routes (JWT validated via auth-service /verify)
+*/api/[|*] magic-conch-api
+    auth-service(/verify)
+    $PathTrimPrefix(/api)
+
+*/health $health
