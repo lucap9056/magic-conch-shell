@@ -1,3 +1,4 @@
+English | [繁體中文](./README.zh-TW.md)
 # Magic Conch Shell
 
 [![Go Version](https://img.shields.io/github/go-mod/go-version/lucap9056/magic-conch-shell?filename=core/go.mod)](https://go.dev/)

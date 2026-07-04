@@ -1,3 +1,4 @@
+[English](README.md) | 繁體中文
 # Magic Conch Shell (神奇海螺)
 
 [![Go Version](https://img.shields.io/github/go-mod/go-version/lucap9056/magic-conch-shell?filename=core/go.mod)](https://go.dev/)
