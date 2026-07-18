@@ -5,6 +5,10 @@ on:
     tags:
       - 'discord/v*.*.*'
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   publish:
     name: Build & Publish Discord Image
@@ -18,19 +22,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Normalize registry owner
+        id: owner
+        run: echo "name=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract Metadata (Discord)
         id: meta-discord
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/magic-conch-shell-discord
+          images: ghcr.io/${{ steps.owner.outputs.name }}/magic-conch-shell/discord
           tags: |
+            type=match,pattern=discord/v(.*),group=1,prefix=v
             type=match,pattern=discord/v(.*),group=1
+            type=match,pattern=discord/v(\d+\.\d+)\.\d+,group=1,prefix=v
+            type=match,pattern=discord/v(\d+\.\d+)\.\d+,group=1
             type=raw,value=latest
 
       - name: Build and Push Discord

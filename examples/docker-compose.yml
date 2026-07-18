@@ -43,7 +43,7 @@ services:
       start_period: 5s
 
   core:
-    image: lucap9056/magic-conch-shell-core:2.0.1
+    image: ghcr.io/lucap9056/magic-conch-shell/core:2.0.1
     environment:
       LLM_API_KEY: ${LLM_API_KEY}
       MODEL_NAME: gemini-2.5-flash-lite
@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
 
   fileupload:
-    image: lucap9056/magic-conch-shell-fileupload:1.2.1
+    image: ghcr.io/lucap9056/magic-conch-shell/fileupload:1.2.0
     environment:
       HTTP_ADDRESS: unix:///var/run/nautrouds/services/fileupload/node-0.sock
       GEMINI_API_KEY: ${LLM_API_KEY}
@@ -74,7 +74,7 @@ services:
     restart: unless-stopped
 
   magic-conch-api:
-    image: lucap9056/magic-conch-shell-httpserver:2.2.0
+    image: ghcr.io/lucap9056/magic-conch-shell/httpserver:2.2.0
     environment:
       HTTP_ADDRESS: unix:///var/run/nautrouds/services/magic-conch-api/node-0.sock
       GRPC_ADDRESS: unix:///var/run/nautrouds/core.sock
