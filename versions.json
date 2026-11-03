@@ -31,6 +31,9 @@
     "fileupload": {
         "^1.0.0": {}
     },
+    "filetoken": {
+        "^1.0.0": {}
+    },
     "integrated/discord": {
         "^1.0.0": {
             "core": "^2.0.0",
