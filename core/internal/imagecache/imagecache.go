@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +18,8 @@ import (
 )
 
 const expiration = 24 * time.Hour
+
+var ErrFileTooLarge = errors.New("file is too large")
 
 type Database interface {
 	Get(key string) (string, error)
@@ -99,7 +101,11 @@ func (c *Cache) urlToKey(url *url.URL) (string, error) {
 }
 
 func (c *Cache) downloadAndUploadToGemini(ctx context.Context, mimeType string, urlStr string, key string) (string, error) {
-	resp, err := http.Get(urlStr)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to build download request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download image: %w", err)
 	}
@@ -110,15 +116,21 @@ func (c *Cache) downloadAndUploadToGemini(ctx context.Context, mimeType string, 
 	}
 
 	if resp.ContentLength > c.maxFileSize {
-		return "", fmt.Errorf("file is too large: %d bytes", resp.ContentLength)
+		return "", fmt.Errorf("%w: %d bytes", ErrFileTooLarge, resp.ContentLength)
 	}
 
-	limitReader := io.LimitReader(resp.Body, c.maxFileSize)
+	body := newSizeLimitedReader(resp.Body, c.maxFileSize)
 
-	file, err := c.client.Files.Upload(ctx, limitReader, &genai.UploadFileConfig{
+	file, err := c.client.Files.Upload(ctx, body, &genai.UploadFileConfig{
 		DisplayName: key,
 		MIMEType:    mimeType,
 	})
+	if body.exceeded {
+		if file != nil {
+			c.client.Files.Delete(context.WithoutCancel(ctx), file.Name, nil)
+		}
+		return "", fmt.Errorf("%w: exceeds %d bytes", ErrFileTooLarge, c.maxFileSize)
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to gemini: %w", err)
 	}
