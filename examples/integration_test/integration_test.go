@@ -15,9 +15,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs/languages"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
+	"github.com/lucap9056/magic-conch-shell/filetoken"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -96,8 +97,8 @@ func TestFlow(t *testing.T) {
 
 	t.Log("=== step 2: unauthenticated request → 401 ===")
 	func() {
-		body, err := json.Marshal(&structs.Request{
-			Language: languages.EN,
+		body, err := protojson.Marshal(&structs.Request{
+			Language: structs.Language_LANGUAGE_EN,
 			CurrentMessage: &structs.PromptMessage{
 				Parts: []*structs.PromptPart{structs.NewTextPart("A or B")},
 			},
@@ -208,17 +209,17 @@ func TestFlow(t *testing.T) {
 		result := &apiResponse[uploadResult]{}
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(result))
 		require.True(t, result.Success)
-		require.NotEmpty(t, result.Message.Key)
+		require.True(t, filetoken.IsToken(result.Message.Key), "key %q is not a filetoken", result.Message.Key)
 		require.NotEmpty(t, result.Message.MimeType)
-		t.Logf("uploaded %s → key=%s  mime_type=%s", testImgFile, result.Message.Key, result.Message.MimeType)
+		t.Logf("uploaded %s → key=%s…  mime_type=%s", testImgFile, result.Message.Key[:16], result.Message.MimeType)
 		return &result.Message
 	}()
 
 	t.Log("=== step 7: authenticated chat request ===")
 	func() {
 		t.Helper()
-		body, err := json.Marshal(&structs.Request{
-			Language: languages.EN,
+		body, err := protojson.Marshal(&structs.Request{
+			Language: structs.Language_LANGUAGE_EN,
 			CurrentMessage: &structs.PromptMessage{
 				Parts: []*structs.PromptPart{
 					structs.NewImagePart(imgRes.MimeType, imgRes.Key),

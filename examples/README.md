@@ -1,3 +1,4 @@
+English | [繁體中文](./README.zh-TW.md)
 # `examples/` stack
 
 Full integration-test deployment of Magic Conch Shell: TLS gateway → router →
@@ -31,8 +32,32 @@ at `core/structs/structs.proto` and the summary below.
 
 Every HTTP service here (except the test `oauth2-provider`, which speaks plain
 OAuth2/OIDC) wraps JSON the same way: `{"success": bool, "message": <T>}`, and
-collapses any `5xx` to `{"success":false,"message":"internal server error"}`
-server-side, never leaking the real error to the client.
+replies to any `5xx` with a fixed generic message while logging the real error
+server-side.
+
+## Setup
+
+Create `examples/.env` with the Gemini API key and a filetoken signing key
+shared by `fileupload` (signs) and `core` (verifies):
+
+```env
+LLM_API_KEY=your_gemini_api_key
+FILE_TOKEN_KEY=k1:<base64url secret, at least 32 bytes>
+```
+
+Generate the secret with:
+
+```bash
+echo "k1:$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+```
+
+Then start the stack and run the end-to-end test:
+
+```bash
+docker compose up -d
+cd integration_test
+go test ./...
+```
 
 ---
 
@@ -137,42 +162,56 @@ can validate the gateway's self-signed cert when calling back through
 
 ## core
 
-**Image:** `lucap9056/magic-conch-shell-core:2.0.1` · **Source:** `core/` (this repo)
+**Image:** `ghcr.io/lucap9056/magic-conch-shell/core:3.0.0` · **Source:** `core/` (this repo)
 
-The LLM engine — **gRPC only** (`GRPC_ADDRESS=unix:///var/run/nautrouds/core.sock`),
-not part of the public HTTP surface. Only `magic-conch-api` calls it. Contract is
-`core/structs/structs.proto`: unary `AssistantService.Chat(Request) → Response`,
-where `Request{language, current_message, history_messages}` and
-`PromptMessage{parts: []PromptPart{type, content, mime_type}}`.
+The LLM engine, served over gRPC at `GRPC_ADDRESS=unix:///var/run/nautrouds/core.sock`
+for `magic-conch-api`. Contract is `core/structs/structs.proto`: unary
+`AssistantService.Chat(Request) → Response`, where
+`Request{language: Language, current_message, history_messages}` and
+`PromptMessage{parts: []PromptPart{type, content, mime_type}}`. Errors are gRPC
+status codes whose message is a user-facing reply.
 
 Key env vars: `LLM_API_KEY` (Gemini — ⚠ `examples/.env` holds a real key in
-plaintext, gitignored but treat as sensitive), `MODEL_NAME`,
-`ALLOWED_IMAGE_DOMAINS=rediscache` (must match `fileupload`'s `RDX_HOSTNAME`),
-`IMAGE_CACHE_PATH=redis://redis:6379`. Runs a self-test prompt against the live
-LLM API on startup and exits if that fails, rather than serving half-broken.
+plaintext, gitignored but treat as sensitive), `MODEL_NAME`, and
+`FILE_TOKEN_KEYS=${FILE_TOKEN_KEY}` to verify the filetokens issued by
+`fileupload`. On startup it lists the models available to `LLM_API_KEY` and
+exits if `MODEL_NAME` is missing from that list. The compose healthcheck runs
+`grpc_health_probe` against the gRPC socket, and `magic-conch-api` waits for it.
 
 ## fileupload
 
-**Image:** `lucap9056/magic-conch-shell-fileupload:1.2.1` · **Source:** `fileupload/` (this repo)
+**Image:** `ghcr.io/lucap9056/magic-conch-shell/fileupload:2.0.0` · **Source:** `fileupload/` (this repo)
 
-`POST /upload` (mounted at `/api/upload`; JWT already validated upstream by
-nautrouds, this service does no auth itself). Accepts `multipart/form-data` field
-`file`, max 20 MiB. MIME sniffed via `http.DetectContentType`, falling back to
-extension-based detection; allow-list is `image/png`, `image/jpeg`, `image/webp`,
-`image/heif`, `image/heic`. Uploads to the Gemini Files API, caches
-`rdx://<RDX_HOSTNAME>/<uuid>` → Gemini file URI in Redis (key
-`image_cache:<sha256>`, TTL 24h), returns `{message:{key, mime_type}}`.
+`POST /upload` (mounted at `/api/upload`; nautrouds validates the JWT upstream).
+Accepts `multipart/form-data` field `file`, max 20 MiB. MIME sniffed via
+`http.DetectContentType`, falling back to extension-based detection; allow-list
+is `image/png`, `image/jpeg`, `image/webp`, `image/heif`, `image/heic`. Uploads to
+the Gemini Files API, signs `{uri, mime, exp}` into a filetoken with
+`FILE_TOKEN_KEY`, and returns `{message:{key: "<filetoken>", mime_type}}`. The
+token is valid for 47h, within the 48h Gemini Files retention. `REDIS_URL` caches
+issued tokens per file hash so re-uploading the same image returns the same token.
+
+`GEMINI_API_KEY` and `core`'s `LLM_API_KEY` must belong to the same Gemini
+project — here both read `${LLM_API_KEY}`.
 
 ## magic-conch-api
 
-**Image:** `lucap9056/magic-conch-shell-httpserver:2.2.0` · **Source:** `httpserver/` (this repo)
+**Image:** `ghcr.io/lucap9056/magic-conch-shell/httpserver:3.0.0` · **Source:** `httpserver/` (this repo)
 
 Thin HTTP↔gRPC bridge to `core` — the actual chat endpoint. `GET /health`, and
-`POST /` (mounted at `POST /api/`, JWT validated upstream, no auth here). Body
-decoded with `DisallowUnknownFields()` (typos/extra fields → `400`);
-`current_message` required. Calls `core` over gRPC with a 5s timeout; on failure
-returns `500` with the **raw gRPC error message** (unlike `fileupload`, this
-handler doesn't mask it).
+`POST /` (mounted at `POST /api/`; nautrouds validates the JWT upstream). Body is
+decoded with `protojson`, max 1 MiB: `language` takes `LANGUAGE_EN`/`LANGUAGE_ZH`
+(or `1`/`2`), field names accept snake_case or camelCase, unknown fields → `400`,
+and `current_message` is required. Calls `core` over gRPC with a 5s timeout and
+maps the status code:
+
+| gRPC code | HTTP | `message` |
+|---|---|---|
+| `InvalidArgument`, `FailedPrecondition` | `400` | `core`'s user-facing reply |
+| `ResourceExhausted` | `429` | `core`'s user-facing reply |
+| `Unavailable` | `503` | `service temporarily unavailable` |
+| `DeadlineExceeded`, `Canceled` | `504` | `request timed out` |
+| anything else | `500` | `internal server error` |
 
 ## postgres
 
@@ -196,7 +235,7 @@ the DB.
 
 | Consumer | Key pattern | Purpose | TTL |
 |---|---|---|---|
-| `fileupload` | `image_cache:<sha256>` | `rdx://` ref → Gemini file URI | 24h |
+| `fileupload` | `fileupload:token:<mime>:<sha256>` | file hash → issued filetoken | token lifetime minus 5 min (~47h) |
 | `auth-service` | internal (PKCE state, refresh token cache) | login-flow state + session cache | state: short-lived; tokens: `REFRESH_TOKEN_TTL` (24h) |
 
 No persistence configured — a restart drops pending logins and cached refresh

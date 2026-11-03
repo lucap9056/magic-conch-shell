@@ -7,7 +7,7 @@ info:
     services) runs over Unix domain sockets and is not directly reachable; every
     path below is reachable only through the gateway, which routes it per
     `examples/nautrouds/Ntufile`.
-  version: "2.2.0"
+  version: "3.0.0"
 externalDocs:
   description: Service-by-service notes
   url: ./README.md
@@ -285,7 +285,7 @@ paths:
                       message:
                         type: object
                         properties:
-                          key: { type: string, description: "Opaque rdx:// reference — pass this as PromptPart.content for an image part" }
+                          key: { type: string, description: "Signed filetoken (mcsft1.…), valid for 47h — pass this as PromptPart.content for an image part" }
                           mime_type: { type: string }
         "400": { description: "Missing file, file too large, or unsupported MIME type" }
         "401": { description: "Missing/invalid token" }
@@ -307,9 +307,24 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
-        "400": { description: "Malformed request / unknown JSON fields / missing current_message" }
+        "400":
+          description: >
+            Malformed request, unknown JSON fields, missing current_message, or a rejected
+            image (invalid or expired filetoken, image host outside the allow-list, image too large).
+            For rejected images, `message` holds a user-facing explanation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
         "401": { description: "Missing/invalid token" }
-        "500": { description: "LLM call failed" }
+        "413": { description: "Request body larger than 1 MiB" }
+        "429":
+          description: Rate limited by the model provider; `message` holds a user-facing explanation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
+        "500": { description: "Internal error" }
+        "503": { description: "Core or the model provider is unavailable" }
+        "504": { description: "Request timed out" }
 
 components:
   securitySchemes:
@@ -338,7 +353,7 @@ components:
       required: [type, content]
       properties:
         type: { type: string, enum: [text, image] }
-        content: { type: string, description: "Text content, or the `key` returned by /api/upload for an image part" }
+        content: { type: string, description: "Text content, or for an image part the `key` returned by /api/upload or an http(s) URL on Core's ALLOWED_IMAGE_DOMAINS" }
         mime_type: { type: string, description: "Required when type=image" }
     PromptMessage:
       type: object
@@ -346,11 +361,17 @@ components:
         parts:
           type: array
           items: { $ref: "#/components/schemas/PromptPart" }
+    Language:
+      oneOf:
+        - { type: string, enum: [LANGUAGE_UNSPECIFIED, LANGUAGE_EN, LANGUAGE_ZH] }
+        - { type: integer, enum: [0, 1, 2] }
+      description: "Enum name or number. LANGUAGE_UNSPECIFIED or omitted means LANGUAGE_EN."
     ChatRequest:
       type: object
       required: [current_message]
+      description: "Decoded with protojson: snake_case (current_message) and camelCase (currentMessage) field names are both accepted."
       properties:
-        language: { type: string, enum: [en, zh], description: "Defaults to en if omitted/unrecognized" }
+        language: { $ref: "#/components/schemas/Language" }
         current_message: { $ref: "#/components/schemas/PromptMessage" }
         history_messages:
           type: array

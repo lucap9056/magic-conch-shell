@@ -43,28 +43,30 @@ services:
       start_period: 5s
 
   core:
-    image: ghcr.io/lucap9056/magic-conch-shell/core:2.0.1
+    image: ghcr.io/lucap9056/magic-conch-shell/core:3.0.0
     environment:
       LLM_API_KEY: ${LLM_API_KEY}
       MODEL_NAME: gemini-2.5-flash-lite
-      ALLOWED_IMAGE_DOMAINS: rediscache
-      IMAGE_CACHE_PATH: redis://redis:6379
+      FILE_TOKEN_KEYS: ${FILE_TOKEN_KEY}
       GRPC_ADDRESS: unix:///var/run/nautrouds/core.sock
     volumes:
       - ./certs:/certs
       - nautrouds_sockets:/var/run/nautrouds
-    depends_on:
-      redis:
-        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/grpc_health_probe", "-addr=unix:///var/run/nautrouds/core.sock"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   fileupload:
-    image: ghcr.io/lucap9056/magic-conch-shell/fileupload:1.2.0
+    image: ghcr.io/lucap9056/magic-conch-shell/fileupload:2.0.0
     environment:
       HTTP_ADDRESS: unix:///var/run/nautrouds/services/fileupload/node-0.sock
       GEMINI_API_KEY: ${LLM_API_KEY}
+      FILE_TOKEN_KEY: ${FILE_TOKEN_KEY}
       REDIS_URL: redis://redis:6379
-      RDX_HOSTNAME: rediscache
       CORS_ALLOWED_ORIGINS: "*"
     volumes:
       - nautrouds_sockets:/var/run/nautrouds
@@ -74,13 +76,16 @@ services:
     restart: unless-stopped
 
   magic-conch-api:
-    image: ghcr.io/lucap9056/magic-conch-shell/httpserver:2.2.0
+    image: ghcr.io/lucap9056/magic-conch-shell/httpserver:3.0.0
     environment:
       HTTP_ADDRESS: unix:///var/run/nautrouds/services/magic-conch-api/node-0.sock
       GRPC_ADDRESS: unix:///var/run/nautrouds/core.sock
       CORS_ALLOWED_ORIGINS: "*"
     volumes:
       - nautrouds_sockets:/var/run/nautrouds
+    depends_on:
+      core:
+        condition: service_healthy
     restart: unless-stopped
 
   oauth2-provider:
