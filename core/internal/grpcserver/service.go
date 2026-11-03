@@ -27,9 +27,8 @@ func (s *AssistantService) Chat(ctx context.Context, req *structs.Request) (*str
 	reply, err := s.asst.GenerateResponse(ctx, language, req.CurrentMessage, req.HistoryMessages)
 	if err != nil {
 		log.Printf("[gRPC Server] Error: %v\n", err)
+		return nil, toStatusError(err, reply)
 	}
 
-	resp := &structs.Response{Reply: reply}
-
-	return resp, nil
+	return &structs.Response{Reply: reply}, nil
 }
