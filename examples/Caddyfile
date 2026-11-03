@@ -1,6 +1,45 @@
-{$CADDY_HOST:0.0.0.0}:{$GATEWAY_PORT:443} {
+(verified_api) {
+	request_header -X-Forwarded-User-Email
+	request_header -X-Forwarded-Device-ID
+	request_header -X-Forwarded-Username
+	forward_auth corvauth:80 {
+		uri /verify
+		copy_headers X-Forwarded-User-Email X-Forwarded-Device-ID X-Forwarded-Username
+	}
+	uri strip_prefix /api
+}
+
+:{$GATEWAY_PORT:443} {
+	bind {$CADDY_HOST:0.0.0.0}
 	tls {$TLS_CERT_FILE:/etc/caddy/certs/gateway.crt} {$TLS_KEY_FILE:/etc/caddy/certs/gateway.key}
-	route {
-		reverse_proxy unix//var/run/nautrouds/entrypoints/nautrouds-0.sock
+
+	handle /health {
+		respond "OK" 200
+	}
+
+	handle /oauth2/* {
+		reverse_proxy dex:5556
+	}
+
+	handle_path /auth/* {
+		reverse_proxy corvauth:80
+	}
+
+	@upload {
+		method POST
+		path /api/upload
+	}
+	handle @upload {
+		route {
+			import verified_api
+			reverse_proxy fileupload:8080
+		}
+	}
+
+	handle /api/* {
+		route {
+			import verified_api
+			reverse_proxy magic-conch-api:8080
+		}
 	}
 }

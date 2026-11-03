@@ -1,0 +1,25 @@
+issuer: https://localhost/oauth2
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  responseTypes: ["code"]
+  skipApprovalScreen: true
+
+staticClients:
+  - id: test-client
+    secret: test-secret
+    name: Magic Conch Shell
+    redirectURIs:
+      - https://localhost/auth/callback
+
+connectors:
+  - type: mockCallback
+    id: mock
+    name: Mock
+
+enablePasswordDB: false

@@ -8,7 +8,6 @@
 #
 # Output files in ./certs/:
 #   gatewayCA.key   CA private key
-#   gatewayCA.cert  CA certificate (trusted by auth-service and integration tests)
 #   gateway.key     Leaf private key
 #   gateway.crt     Leaf certificate (used by Caddy)
 

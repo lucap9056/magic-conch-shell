@@ -109,7 +109,7 @@ go run ./cmd
 Check the gRPC server with [`grpc_health_probe`](https://github.com/grpc-ecosystem/grpc-health-probe) (bundled at `/app/grpc_health_probe` in the Core image):
 
 ```bash
-grpc_health_probe -addr=unix:///var/run/nautrouds/core.sock
+grpc_health_probe -addr=localhost:50051
 ```
 
 ### Discord — `discord/cmd`

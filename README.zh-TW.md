@@ -109,7 +109,7 @@ go run ./cmd
 以 [`grpc_health_probe`](https://github.com/grpc-ecosystem/grpc-health-probe) 檢查 gRPC server（Core image 內附於 `/app/grpc_health_probe`）：
 
 ```bash
-grpc_health_probe -addr=unix:///var/run/nautrouds/core.sock
+grpc_health_probe -addr=localhost:50051
 ```
 
 ### Discord — `discord/cmd`

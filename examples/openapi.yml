@@ -3,10 +3,9 @@ info:
   title: Magic Conch Shell — Integration Gateway
   description: >
     Public HTTP surface of the `examples/` stack, as seen by a client hitting the
-    Caddy gateway on `https://localhost`. All internal traffic (nautrouds → backend
-    services) runs over Unix domain sockets and is not directly reachable; every
-    path below is reachable only through the gateway, which routes it per
-    `examples/nautrouds/Ntufile`.
+    Caddy gateway on `https://localhost`. Backend services are reachable only on the
+    compose network; every path below goes through the gateway, which routes it per
+    `examples/Caddyfile`.
   version: "3.0.0"
 externalDocs:
   description: Service-by-service notes
@@ -17,10 +16,10 @@ servers:
 
 tags:
   - name: health
-  - name: oauth2-provider
-    description: Test-only OIDC/OAuth2 provider stub (auto-approves everything). See README.md#oauth2-provider
+  - name: dex
+    description: Dex with the mockCallback connector — test-only, signs everyone in as a fixed mock user. See README.md#dex
   - name: auth
-    description: auth-service (oauth2-middleware) — session/JWT management. See README.md#auth-service
+    description: corvauth — device-bound session/JWT management. See README.md#corvauth
   - name: chat
     description: magic-conch-api (httpserver). See README.md#magic-conch-api
   - name: upload
@@ -31,7 +30,7 @@ paths:
     get:
       tags: [health]
       summary: Gateway liveness check
-      description: Answered directly by nautrouds' built-in `$health` virtual service — never reaches a backend container.
+      description: Answered directly by the gateway (`respond "OK" 200`).
       responses:
         "200":
           description: OK
@@ -41,7 +40,7 @@ paths:
 
   /oauth2/.well-known/openid-configuration:
     get:
-      tags: [oauth2-provider]
+      tags: [dex]
       summary: OIDC discovery document
       responses:
         "200":
@@ -52,8 +51,8 @@ paths:
 
   /oauth2/auth:
     get:
-      tags: [oauth2-provider]
-      summary: Authorization endpoint (test stub — grants unconditionally, no login UI, no credential check)
+      tags: [dex]
+      summary: Authorization endpoint (Dex mockCallback — signs in the mock user without a login form)
       parameters:
         - { name: response_type, in: query, schema: { type: string, enum: [code] }, example: code }
         - { name: client_id, in: query, schema: { type: string } }
@@ -64,14 +63,16 @@ paths:
         - { name: scope, in: query, schema: { type: string } }
       responses:
         "302":
-          description: Redirect to redirect_uri with `code` and `state` query params. No consent/login step.
+          description: >
+            Starts a redirect chain inside Dex (connector login, callback). Follow 302/303 redirects
+            until Location reaches redirect_uri with `code` and `state` query params.
           headers:
             Location: { schema: { type: string, format: uri } }
 
   /oauth2/token:
     post:
-      tags: [oauth2-provider]
-      summary: Token endpoint (test stub — issues an unsigned `alg:none` id_token)
+      tags: [dex]
+      summary: Token endpoint
       requestBody:
         required: true
         content:
@@ -96,24 +97,25 @@ paths:
                   access_token: { type: string }
                   token_type: { type: string, example: Bearer }
                   expires_in: { type: integer, example: 3600 }
-                  id_token: { type: string, description: "Unsigned (alg:none) JWT — test only, do not trust its signature" }
+                  id_token: { type: string, description: "RS256-signed JWT; keys at /oauth2/keys" }
 
   /oauth2/userinfo:
     get:
-      tags: [oauth2-provider]
-      summary: Userinfo endpoint — returns the fixed identity baked into the provider's env vars (USER_SUB/USER_EMAIL/USER_NAME)
+      tags: [dex]
+      summary: Userinfo endpoint — returns the mock user (`kilgore@kilgore.trout`)
       security: [{ bearerAuth: [] }]
       responses:
         "200":
-          description: Fixed test identity
+          description: Mock user identity
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   sub: { type: string }
-                  email: { type: string }
-                  name: { type: string }
+                  email: { type: string, example: kilgore@kilgore.trout }
+                  email_verified: { type: boolean, example: true }
+                  name: { type: string, example: Kilgore Trout }
 
   /auth/login:
     get:
@@ -161,27 +163,40 @@ paths:
   /auth/verify:
     get:
       tags: [auth]
-      summary: Validate an access token (also used internally by nautrouds as a chained auth middleware for /api/*)
+      summary: Validate an access token (also the gateway's forward_auth target for /api/*)
       security: [{ bearerAuth: [] }]
       responses:
         "204":
-          description: Valid token. Identity is returned via response headers, which nautrouds injects into the forwarded request.
+          description: Valid token. Identity is returned via response headers, which the gateway copies onto the forwarded request.
           headers:
-            X-Forwarded-User-ID: { schema: { type: string } }
+            X-Forwarded-User-Email: { schema: { type: string } }
             X-Forwarded-Device-ID: { schema: { type: string } }
+            X-Forwarded-Username: { schema: { type: string }, description: "Present when the user has a username" }
         "401":
           description: Missing/invalid/expired token
+          headers:
+            WWW-Authenticate: { schema: { type: string, example: Bearer } }
+            X-Auth-Error: { schema: { type: string, enum: [device_not_found, invalid_signature] }, description: "Present when the device session caused the 401" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiEnvelopeString" }
+
+  /auth/verify-optional:
+    get:
+      tags: [auth]
+      summary: Like /auth/verify, but returns 204 without identity headers when no Bearer token is sent
+      responses:
+        "204":
+          description: Anonymous, or a valid token with the same identity headers as /auth/verify
+        "401": { description: "A Bearer token was sent and is invalid/expired" }
 
   /auth/refresh:
     post:
       tags: [auth]
       summary: Rotate the refresh token and issue a new access+refresh pair
       description: >
-        Refresh token can be supplied as a `refresh_token` cookie, an `Authorization` header,
-        or a `refresh_token` field in the JSON body — any one of the three.
+        Send the refresh token as the `refresh_token` cookie, or as a `refresh_token` field
+        in the JSON body when the cookie is absent. Sets a new `refresh_token` cookie.
       requestBody:
         required: false
         content:
@@ -228,10 +243,48 @@ paths:
                       message: { type: string, description: "New access token (plain string, not a token pair)" }
         "401": { description: "Invalid/expired/revoked refresh token" }
 
+  /auth/refresh-status:
+    post:
+      tags: [auth]
+      summary: Inspect a refresh token without rotating it
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Refresh token details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiEnvelope"
+                  - type: object
+                    properties:
+                      message:
+                        type: object
+                        properties:
+                          device_id: { type: string }
+                          issued_at: { type: integer, description: "Unix seconds" }
+                          expires_at: { type: integer, description: "Unix seconds" }
+        "401": { description: "Invalid/expired/revoked refresh token" }
+
   /auth/logout:
     post:
       tags: [auth]
-      summary: Revoke the current device session
+      summary: Revoke the current device session and clear the refresh_token cookie
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
       responses:
         "200":
           description: Logged out
@@ -257,8 +310,8 @@ paths:
       tags: [upload]
       summary: Upload an image for use in a chat message
       description: >
-        JWT is validated by the gateway (nautrouds chains `auth-service(/verify)` before
-        forwarding) — the fileupload service itself never sees the token.
+        JWT is validated by the gateway (`forward_auth` to corvauth `/verify` before
+        forwarding); fileupload itself performs no authentication.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true

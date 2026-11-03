@@ -25,6 +25,9 @@ const (
 	gatewayURL  = "https://localhost"
 	caCertFile  = "../certs/gatewayCA.cert"
 	testImgFile = "test.png"
+
+	callbackPath     = "/auth/callback"
+	maxAuthRedirects = 10
 )
 
 var (
@@ -134,20 +137,27 @@ func TestFlow(t *testing.T) {
 	type authCode struct{ code, state string }
 	authRes := func() authCode {
 		t.Helper()
-		resp, err := noRedirect.Get(loginResp.URL)
+		redirectURL, err := url.Parse(loginResp.URL)
 		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusFound, resp.StatusCode)
 
-		location := resp.Header.Get("Location")
-		require.NotEmpty(t, location, "no Location header in authorization response")
-		redirectURL, err := url.Parse(location)
-		require.NoError(t, err)
+		for hop := 0; redirectURL.Path != callbackPath; hop++ {
+			require.Less(t, hop, maxAuthRedirects, "authorization did not reach %s", callbackPath)
+
+			resp, err := noRedirect.Get(redirectURL.String())
+			require.NoError(t, err)
+			resp.Body.Close()
+			require.Contains(t, []int{http.StatusFound, http.StatusSeeOther}, resp.StatusCode, "GET %s", redirectURL)
+
+			location, err := resp.Location()
+			require.NoError(t, err, "no Location header from %s", redirectURL)
+			t.Logf("redirect → %s", location.Host+location.Path)
+			redirectURL = location
+		}
 
 		code := redirectURL.Query().Get("code")
 		state := redirectURL.Query().Get("state")
-		require.NotEmpty(t, code, "no code in redirect URL: %s", location)
-		t.Logf("redirect → %s  code=%s…  state=%s", redirectURL.Host+redirectURL.Path, code[:8], state)
+		require.NotEmpty(t, code, "no code in redirect URL: %s", redirectURL)
+		t.Logf("callback code=%s…  state=%s", code[:8], state)
 		return authCode{code: code, state: state}
 	}()
 
