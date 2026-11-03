@@ -43,6 +43,13 @@ func WithTimeout(timeout time.Duration) ClientOption {
 	}
 }
 
+func WithMaxMsgSize(recvSize, sendSize int) ClientOption {
+	return func(c *clientConfig) {
+		c.MaxRecvMsgSize = recvSize
+		c.MaxSendMsgSize = sendSize
+	}
+}
+
 func WithTLSCA(caPath string) ClientOption {
 	return func(c *clientConfig) {
 		c.TLS.CAPath = caPath
@@ -56,10 +63,52 @@ func WithTLSCert(certPath, keyPath string) ClientOption {
 	}
 }
 
+func WithTLSServerName(serverName string) ClientOption {
+	return func(c *clientConfig) {
+		c.TLS.ServerName = serverName
+	}
+}
+
 func WithDialOptions(opts ...grpc.DialOption) ClientOption {
 	return func(c *clientConfig) {
 		c.ExtraOptions = append(c.ExtraOptions, opts...)
 	}
+}
+
+func (c *clientConfig) tlsEnabled() bool {
+	return c.TLS.CAPath != "" || c.TLS.CertPath != "" || c.TLS.KeyPath != "" || c.TLS.ServerName != ""
+}
+
+func (c *clientConfig) buildTLSConfig() (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		ServerName: c.TLS.ServerName,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	if c.TLS.CertPath != "" || c.TLS.KeyPath != "" {
+		if c.TLS.CertPath == "" || c.TLS.KeyPath == "" {
+			return nil, fmt.Errorf("both client cert and key are required for mTLS")
+		}
+		cert, err := tls.LoadX509KeyPair(c.TLS.CertPath, c.TLS.KeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client key pair: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	if c.TLS.CAPath != "" {
+		caCert, err := os.ReadFile(c.TLS.CAPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA cert: %w", err)
+		}
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to append CA cert to pool")
+		}
+		tlsConfig.RootCAs = certPool
+	}
+
+	return tlsConfig, nil
 }
 
 func (c *clientConfig) buildDialOptions() ([]grpc.DialOption, error) {
@@ -70,39 +119,15 @@ func (c *clientConfig) buildDialOptions() ([]grpc.DialOption, error) {
 		),
 	}
 
-	if c.TLS.CertPath != "" && c.TLS.KeyPath != "" {
-		cert, err := tls.LoadX509KeyPair(c.TLS.CertPath, c.TLS.KeyPath)
+	if c.tlsEnabled() {
+		tlsConfig, err := c.buildTLSConfig()
 		if err != nil {
-			return nil, fmt.Errorf("failed to load server key pair: %w", err)
+			return nil, err
 		}
-
-		tlsConfig := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		}
-
-		if c.TLS.CAPath != "" {
-			caCert, err := os.ReadFile(c.TLS.CAPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read CA cert: %w", err)
-			}
-
-			certPool := x509.NewCertPool()
-			if !certPool.AppendCertsFromPEM(caCert) {
-				return nil, fmt.Errorf("failed to append CA cert to pool")
-			}
-
-			tlsConfig.ClientCAs = certPool
-			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
-		}
-
-		creds := credentials.NewTLS(tlsConfig)
-		opts = append(opts, grpc.WithTransportCredentials(creds))
-
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	opts = append(opts, c.ExtraOptions...)
-
-	return opts, nil
+	return append(opts, c.ExtraOptions...), nil
 }
