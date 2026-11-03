@@ -16,6 +16,7 @@ import (
 	"github.com/lucap9056/magic-conch-shell/core/v3/assistant/randomizer"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
+	"github.com/lucap9056/magic-conch-shell/filetoken"
 
 	"google.golang.org/genai"
 )
@@ -29,6 +30,7 @@ type Client struct {
 	imageCache         *imagecache.Cache
 	modelName          string
 	systemInstructions map[languages.Language]string
+	fileTokenVerifier  *filetoken.Verifier
 }
 
 // NewClient initializes a new LLM client with a predefined system prompt and conversation history.
@@ -70,6 +72,7 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 		imageCache:         imageCache,
 		modelName:          modelName,
 		systemInstructions: sysInstructions,
+		fileTokenVerifier:  options.fileTokenVerifier,
 	}, nil
 }
 
@@ -89,7 +92,7 @@ func (c *Client) GenerateResponse(ctx context.Context, language languages.Langua
 		message, err := c.convertMessageToContent(historyMessage)
 		if err != nil {
 			log.Printf("error: failed to convert history message: %v", err)
-			return "System error: Failed to process conversation history.", fmt.Errorf("failed to convert history message at index %d: %w", i, err)
+			return imageErrorReply(err, "System error: Failed to process conversation history."), fmt.Errorf("failed to convert history message at index %d: %w", i, err)
 		}
 		contents = append(contents, message)
 	}
@@ -97,7 +100,7 @@ func (c *Client) GenerateResponse(ctx context.Context, language languages.Langua
 	msg, err := c.convertMessageToContent(newMessage)
 	if err != nil {
 		log.Printf("error: failed to convert new message: %v", err)
-		return "System error: Failed to process the user message.", fmt.Errorf("failed to convert new message: %w", err)
+		return imageErrorReply(err, "System error: Failed to process the user message."), fmt.Errorf("failed to convert new message: %w", err)
 	}
 
 	contents = append(contents, msg)
@@ -162,7 +165,7 @@ func (c *Client) convertMessageToContent(message *structs.PromptMessage) (*genai
 		case structs.PartTypeText:
 			parts[j] = genai.NewPartFromText(part.Content)
 		case structs.PartTypeImage:
-			fileData, err := c.fetchAndCacheFileData(part.MimeType, part.Content)
+			fileData, err := c.resolveImagePart(part.MimeType, part.Content)
 			if err != nil {
 				return nil, fmt.Errorf("failed to process image part: %w", err)
 			}
@@ -173,6 +176,36 @@ func (c *Client) convertMessageToContent(message *structs.PromptMessage) (*genai
 	}
 
 	return genai.NewContentFromParts(parts, genai.RoleUser), nil
+}
+
+var errFileTokenDisabled = errors.New("file tokens are not enabled")
+
+func (c *Client) resolveImagePart(mimeType string, content string) (*genai.Part, error) {
+	if !filetoken.IsToken(content) {
+		return c.fetchAndCacheFileData(mimeType, content)
+	}
+	if c.fileTokenVerifier == nil {
+		return nil, errFileTokenDisabled
+	}
+	claims, err := c.fileTokenVerifier.Verify(content)
+	if err != nil {
+		return nil, fmt.Errorf("invalid file token: %w", err)
+	}
+	return genai.NewPartFromURI(claims.URI, claims.MIMEType), nil
+}
+
+func imageErrorReply(err error, fallback string) string {
+	switch {
+	case errors.Is(err, filetoken.ErrExpired):
+		return "An image in this conversation has expired. Please upload it again."
+	case errors.Is(err, filetoken.ErrMalformed),
+		errors.Is(err, filetoken.ErrInvalidSignature),
+		errors.Is(err, filetoken.ErrUnknownKey),
+		errors.Is(err, errFileTokenDisabled):
+		return "The image reference is invalid. Please upload it again."
+	default:
+		return fallback
+	}
 }
 
 // fetchAndCacheFileData retrieves image data from URL and returns a file URI part for the SDK.

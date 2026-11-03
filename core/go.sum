@@ -47,6 +47,8 @@ github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2
 github.com/klauspost/cpuid/v2 v2.2.10/go.mod h1:hqwkgyIinND0mEev00jJYCxPNVRVXFQeu1XKlok6oO0=
 github.com/lucap9056/go-lifecycle/v2 v2.0.0 h1:wbqPYq1FXqutbccCsFmahyBa6hts3er7hPavUZR6LNY=
 github.com/lucap9056/go-lifecycle/v2 v2.0.0/go.mod h1:Ot6jcCAedq/W42oioH7pXBUFkopR2+hzhYtrwY053oU=
+github.com/lucap9056/magic-conch-shell/filetoken v1.0.0 h1:2UFk3vpxqepuBo8uoFr4eMC7D0FliUMw5eqytrFM1cE=
+github.com/lucap9056/magic-conch-shell/filetoken v1.0.0/go.mod h1:lzRM6qrTfAryLMERaaCzxr2tatOMA3sDIdt9VmeFXEw=
 github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.1 h1:Uh1Yf/MsuSu1P2KaAPfEDs+hcmA6MJ39+wyHbPR6OEs=
 github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.1/go.mod h1:RQHXDnTM3Q9BPreVdeNd9OlL/64dVp6nJ+AVw920Hs8=
 github.com/redis/go-redis/v9 v9.21.0 h1:FPBE4hhbAke+TLmcY3WkpbDffJEomdqPn3HYiqAtL9E=

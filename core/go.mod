@@ -5,6 +5,7 @@ go 1.27
 require (
 	github.com/dgraph-io/badger/v4 v4.9.2
 	github.com/lucap9056/go-lifecycle/v2 v2.0.0
+	github.com/lucap9056/magic-conch-shell/filetoken v1.0.0
 	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.1
 	github.com/redis/go-redis/v9 v9.21.0
 	google.golang.org/genai v1.77.0

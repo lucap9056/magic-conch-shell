@@ -14,6 +14,7 @@ import (
 	"github.com/lucap9056/magic-conch-shell/core/v3/internal/grpcserver"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
+	"github.com/lucap9056/magic-conch-shell/filetoken"
 
 	"github.com/lucap9056/go-lifecycle/v2/lifecycle"
 	"github.com/lucap9056/go-lifecycle/v2/runner"
@@ -34,6 +35,7 @@ func run(life *lifecycle.Coordinator) error {
 	consoleMode := os.Getenv("CONSOLE_MODE")
 	allowedImageDomains := os.Getenv("ALLOWED_IMAGE_DOMAINS")
 	imageCachePath := os.Getenv("IMAGE_CACHE_PATH")
+	fileTokenKeys := os.Getenv("FILE_TOKEN_KEYS")
 	grpcAddress := os.Getenv("GRPC_ADDRESS")
 	grpcCert := os.Getenv("GRPC_TLS_CERT")
 	grpcKey := os.Getenv("GRPC_TLS_KEY")
@@ -89,6 +91,17 @@ func run(life *lifecycle.Coordinator) error {
 	var options []assistant.Option
 	if imageCachePath != "" {
 		options = append(options, assistant.WithCachePath(imageCachePath))
+	}
+	if fileTokenKeys != "" {
+		keys, err := filetoken.ParseKeys(fileTokenKeys)
+		if err != nil {
+			return fmt.Errorf("invalid FILE_TOKEN_KEYS: %w", err)
+		}
+		verifier, err := filetoken.NewVerifier(keys)
+		if err != nil {
+			return fmt.Errorf("invalid FILE_TOKEN_KEYS: %w", err)
+		}
+		options = append(options, assistant.WithFileTokenVerifier(verifier))
 	}
 	asst, err := assistant.NewClient(apiKey, modelName, allowedImageDomains, options...)
 	if err != nil {

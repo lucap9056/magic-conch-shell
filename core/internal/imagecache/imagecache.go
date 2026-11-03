@@ -69,6 +69,9 @@ func (c *Cache) Fetch(ctx context.Context, mimeType string, urlString string) (s
 	if err != nil {
 		return "", fmt.Errorf("invalid url format: %w", err)
 	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported url scheme %q", u.Scheme)
+	}
 	if !c.whitelist.IsAllowed(u.Hostname()) {
 		return "", fmt.Errorf("domain %s is not in whitelist", u.Hostname())
 	}
