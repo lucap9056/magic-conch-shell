@@ -27,7 +27,7 @@ Every inter-service call runs over Unix domain sockets on the shared
 `nautrouds_sockets` volume; only `gateway` exposes a TCP port (`443`). Public API
 contract for everything nautrouds routes: [`openapi.yml`](openapi.yml). `core`'s
 gRPC surface is internal-only and isn't part of that contract — see its `.proto`
-at `core/v2/structs/structs.proto` and the summary below.
+at `core/structs/structs.proto` and the summary below.
 
 Every HTTP service here (except the test `oauth2-provider`, which speaks plain
 OAuth2/OIDC) wraps JSON the same way: `{"success": bool, "message": <T>}`, and
@@ -141,7 +141,7 @@ can validate the gateway's self-signed cert when calling back through
 
 The LLM engine — **gRPC only** (`GRPC_ADDRESS=unix:///var/run/nautrouds/core.sock`),
 not part of the public HTTP surface. Only `magic-conch-api` calls it. Contract is
-`core/v2/structs/structs.proto`: unary `AssistantService.Chat(Request) → Response`,
+`core/structs/structs.proto`: unary `AssistantService.Chat(Request) → Response`,
 where `Request{language, current_message, history_messages}` and
 `PromptMessage{parts: []PromptPart{type, content, mime_type}}`.
 

@@ -102,7 +102,7 @@ for `.env` (or `.env.local`, `.env.development`, etc.), not the repo root — so
 place each service's `.env` in the directory you `cd` into before `go run
 main.go` (its `cmd/` folder, by default).
 
-### Core — `core/v2/cmd`
+### Core — `core/cmd`
 
 The gRPC engine: Gemini-backed decision parsing, the Lua sandbox, and an
 optional interactive console. Runs a live self-test call against the Gemini
@@ -126,7 +126,7 @@ API on startup and exits if it fails.
 allowing all — set it explicitly if image input is used.
 
 ```bash
-cd core/v2/cmd
+cd core/cmd
 go run main.go
 ```
 
@@ -222,4 +222,4 @@ When the core service starts, you can type questions directly into the terminal 
 ## Development and Customization
 
 ### Custom Decision Logic
-Modify `core/v2/assistant/luascript/script.lua` to customize Lua function behavior, or adjust `core/v2/assistant/systemInstruction` to refine how the AI generates Lua code.
+Modify `core/assistant/luascript/script.lua` to customize Lua function behavior, or adjust `core/assistant/systemInstruction` to refine how the AI generates Lua code.

@@ -2,10 +2,12 @@ package assistant
 
 import (
 	"testing"
+
+	"github.com/lucap9056/magic-conch-shell/core/v3/assistant/luascript"
 )
 
 func TestSafeExecuteLua(t *testing.T) {
-	c := &Client{}
+	c := &Client{luaRuntimeScript: luascript.GetScript()}
 
 	tests := []struct {
 		name    string

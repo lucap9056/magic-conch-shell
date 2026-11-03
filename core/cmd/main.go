@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/lucap9056/magic-conch-shell/core/v2/assistant"
-	"github.com/lucap9056/magic-conch-shell/core/v2/internal/grpcserver"
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs/languages"
+	"github.com/lucap9056/magic-conch-shell/core/v3/assistant"
+	"github.com/lucap9056/magic-conch-shell/core/v3/internal/grpcserver"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 
 	"github.com/lucap9056/go-envfile/envfile"
 	"github.com/lucap9056/go-lifecycle/lifecycle"

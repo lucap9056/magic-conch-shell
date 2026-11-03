@@ -1,7 +1,7 @@
 package grpcserver
 
 import (
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/httpserver/httputil"
 
 	"google.golang.org/grpc"

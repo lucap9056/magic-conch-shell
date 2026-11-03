@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
-	"github.com/lucap9056/magic-conch-shell/core/internal/imagecache/embedcache"
-	"github.com/lucap9056/magic-conch-shell/core/internal/imagecache/rediscache"
+	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache/embedcache"
+	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache/rediscache"
 )
 
 const expiration = 24 * time.Hour

@@ -15,11 +15,11 @@ import (
 
 	"embed"
 
-	"github.com/lucap9056/magic-conch-shell/core/internal/imagecache"
+	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache"
 
-	"github.com/lucap9056/magic-conch-shell/core/v2/assistant/luascript"
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs/languages"
+	"github.com/lucap9056/magic-conch-shell/core/v3/assistant/luascript"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 
 	"github.com/google/generative-ai-go/genai"
 	lua "github.com/yuin/gopher-lua"

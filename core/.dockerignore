@@ -1,0 +1,5 @@
+*.bat
+.env
+dist/
+image_cache/
+docker/

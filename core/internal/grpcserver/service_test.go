@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs/languages"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 )
 
 type mockAssistantClient struct {

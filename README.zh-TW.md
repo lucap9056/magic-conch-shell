@@ -99,7 +99,7 @@ gRPC 連接），請參考下方 [服務說明](#服務說明)。若要體驗接
 而不是專案根目錄——因此請把每個服務的 `.env` 放在你 `go run main.go` 前
 `cd` 進去的那個目錄（預設是各自的 `cmd/` 資料夾）。
 
-### Core — `core/v2/cmd`
+### Core — `core/cmd`
 
 gRPC 引擎：Gemini 決策解析、Lua 沙盒引擎，以及可選的互動式終端機模式。啟動時
 會對 Gemini API 執行一次即時自我測試，失敗就結束行程。
@@ -122,7 +122,7 @@ gRPC 引擎：Gemini 決策解析、Lua 沙盒引擎，以及可選的互動式�
 使用圖片輸入功能請務必明確設定。
 
 ```bash
-cd core/v2/cmd
+cd core/cmd
 go run main.go
 ```
 
@@ -215,4 +215,4 @@ go run main.go
 ## 開發與自定義
 
 ### 自定義決策邏輯
-你可以修改 core/v2/assistant/luascript/script.lua 來自定義 Lua 函數的行為，或修改 core/v2/assistant/systemInstruction 來調整 AI 生成 Lua 代碼的引導語。
+你可以修改 core/assistant/luascript/script.lua 來自定義 Lua 函數的行為，或修改 core/assistant/systemInstruction 來調整 AI 生成 Lua 代碼的引導語。
