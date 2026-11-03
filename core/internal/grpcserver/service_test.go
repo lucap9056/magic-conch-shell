@@ -10,11 +10,13 @@ import (
 )
 
 type mockAssistantClient struct {
-	reply string
-	err   error
+	reply       string
+	err         error
+	gotLanguage languages.Language
 }
 
 func (m *mockAssistantClient) GenerateResponse(ctx context.Context, language languages.Language, newMessage *structs.PromptMessage, historyMessages []*structs.PromptMessage) (string, error) {
+	m.gotLanguage = language
 	return m.reply, m.err
 }
 
@@ -59,6 +61,30 @@ func TestChat(t *testing.T) {
 			}
 			if resp.Reply != tt.reply {
 				t.Errorf("AssistantService.Chat() got reply = %v, want %v", resp.Reply, tt.reply)
+			}
+		})
+	}
+}
+
+func TestChatNormalizesLanguage(t *testing.T) {
+	tests := map[string]languages.Language{
+		"en":    languages.EN,
+		"EN":    languages.EN,
+		"zh":    languages.ZH,
+		"zh-TW": languages.ZH,
+		"zh_CN": languages.ZH,
+		"fr":    languages.EN,
+		"":      languages.EN,
+	}
+	for input, want := range tests {
+		t.Run(input, func(t *testing.T) {
+			mock := &mockAssistantClient{}
+			req := &structs.Request{Language: input, CurrentMessage: &structs.PromptMessage{}}
+			if _, err := NewService(mock).Chat(context.Background(), req); err != nil {
+				t.Fatal(err)
+			}
+			if mock.gotLanguage != want {
+				t.Errorf("language %q forwarded as %q, want %q", input, mock.gotLanguage, want)
 			}
 		})
 	}
