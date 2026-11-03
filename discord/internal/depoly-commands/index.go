@@ -3,8 +3,8 @@ package depolycommands
 import (
 	"strings"
 
-	COMMANDS "github.com/lucap9056/magic-conch-shell/discord/internal/commands"
-	OPTIONS "github.com/lucap9056/magic-conch-shell/discord/internal/options"
+	COMMANDS "github.com/lucap9056/magic-conch-shell/discord/v2/internal/commands"
+	OPTIONS "github.com/lucap9056/magic-conch-shell/discord/v2/internal/options"
 
 	"github.com/bwmarrin/discordgo"
 )

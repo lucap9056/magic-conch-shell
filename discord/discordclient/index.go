@@ -7,13 +7,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs"
-	"github.com/lucap9056/magic-conch-shell/core/v2/structs/languages"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 
-	COMMANDS "github.com/lucap9056/magic-conch-shell/discord/internal/commands"
-	OPTIONS "github.com/lucap9056/magic-conch-shell/discord/internal/options"
+	COMMANDS "github.com/lucap9056/magic-conch-shell/discord/v2/internal/commands"
+	OPTIONS "github.com/lucap9056/magic-conch-shell/discord/v2/internal/options"
 
 	"github.com/bwmarrin/discordgo"
+)
+
+const (
+	maxContextDepth = 20
+	silentReply     = "The shell remains silent."
 )
 
 type GenerateResponse = func(context.Context, languages.Language, *structs.PromptMessage, []*structs.PromptMessage) (string, error)
@@ -134,7 +139,7 @@ func (client *DiscordClient) interactionCreateHandler(session *discordgo.Session
 			},
 		}
 
-		lang, _ := languages.Parse(interaction.Locale.String())
+		lang, _ := languages.Parse(string(interaction.Locale))
 
 		reply, err := client.generateResponse(ctx, lang, req, nil)
 
@@ -151,7 +156,7 @@ func (client *DiscordClient) interactionCreateHandler(session *discordgo.Session
 			interaction.Interaction,
 			true,
 			&discordgo.WebhookParams{
-				Content: reply,
+				Content: replyOrFallback(reply),
 				Flags:   discordgo.MessageFlagsEphemeral,
 			},
 		)
@@ -164,27 +169,25 @@ func (client *DiscordClient) interactionCreateHandler(session *discordgo.Session
 
 func (client *DiscordClient) messageCreateHandler(session *discordgo.Session, message *discordgo.MessageCreate) {
 
-	if message.Author.Bot {
+	if message.Author == nil || message.Author.Bot {
 		return
 	}
 
 	guildID := message.GuildID
 	targetChannelID, found := client.channels.GetResponseChannel(guildID)
-	content := message.Content
-	botMention := fmt.Sprintf("<@%s>", client.session.State.User.ID)
-	isMentioned := strings.HasPrefix(content, botMention)
+	content, isMentioned := stripBotMention(message.Content, client.session.State.User.ID)
 
 	if (!found || message.ChannelID != targetChannelID) && !isMentioned {
 		return
 	}
 
-	if isMentioned {
-		content = strings.TrimLeft(content, botMention)
-		content = strings.TrimSpace(content)
+	currentUserMessage := buildPromptMessage(message.Attachments, content)
+	if len(currentUserMessage.Parts) == 0 {
+		return
 	}
 
 	// Fetch referenced messages (context)
-	referencedMessages, err := client.fetchMessageContext(message.MessageReference)
+	referencedMessages, err := client.fetchMessageContext(message.MessageReference, 0)
 	if err != nil {
 		log.Printf("Error fetching referenced messages for message %s: %v", message.ID, err)
 
@@ -208,9 +211,6 @@ func (client *DiscordClient) messageCreateHandler(session *discordgo.Session, me
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
-	// Convert current message to LLM prompt message
-	currentUserMessage := client.convertDiscordMessageToPrompt(message.Message)
-
 	response, err := client.generateResponse(ctx, client.language, currentUserMessage, promptMessages)
 	if err != nil {
 		log.Printf("Failed to generate response for message %s: %v", message.ID, err)
@@ -220,25 +220,29 @@ func (client *DiscordClient) messageCreateHandler(session *discordgo.Session, me
 
 	session.ChannelMessageSendReply(
 		message.ChannelID,
-		response,
+		replyOrFallback(response),
 		&discordgo.MessageReference{
 			MessageID: message.ID,
 		},
 	)
 }
 func (dc *DiscordClient) convertDiscordMessageToPrompt(m *discordgo.Message) *structs.PromptMessage {
+	return buildPromptMessage(m.Attachments, m.Content)
+}
+
+func buildPromptMessage(attachments []*discordgo.MessageAttachment, text string) *structs.PromptMessage {
 	parts := []*structs.PromptPart{}
 
 	// Handle attachments
-	for _, attachment := range m.Attachments {
+	for _, attachment := range attachments {
 		if strings.HasPrefix(attachment.ContentType, "image/") {
 			parts = append(parts, structs.NewImagePart(attachment.ContentType, attachment.URL))
 		}
 	}
 
 	// Add text content
-	if m.Content != "" {
-		parts = append(parts, structs.NewTextPart(m.Content))
+	if text != "" {
+		parts = append(parts, structs.NewTextPart(text))
 	}
 
 	return &structs.PromptMessage{
@@ -246,9 +250,25 @@ func (dc *DiscordClient) convertDiscordMessageToPrompt(m *discordgo.Message) *st
 	}
 }
 
+func stripBotMention(content string, botID string) (string, bool) {
+	for _, mention := range []string{"<@" + botID + ">", "<@!" + botID + ">"} {
+		if rest, ok := strings.CutPrefix(content, mention); ok {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	return content, false
+}
+
+func replyOrFallback(reply string) string {
+	if strings.TrimSpace(reply) == "" {
+		return silentReply
+	}
+	return reply
+}
+
 // fetchMessageContext recursively fetches the full chain of referenced messages to provide context.
-func (dc *DiscordClient) fetchMessageContext(reference *discordgo.MessageReference) ([]*discordgo.Message, error) {
-	if reference == nil || reference.MessageID == "" {
+func (dc *DiscordClient) fetchMessageContext(reference *discordgo.MessageReference, depth int) ([]*discordgo.Message, error) {
+	if reference == nil || reference.MessageID == "" || depth >= maxContextDepth {
 		return nil, nil
 	}
 
@@ -260,7 +280,7 @@ func (dc *DiscordClient) fetchMessageContext(reference *discordgo.MessageReferen
 
 	// If this message references another, recurse
 	if msg.MessageReference != nil && msg.MessageReference.MessageID != "" {
-		previousMessages, err := dc.fetchMessageContext(msg.MessageReference)
+		previousMessages, err := dc.fetchMessageContext(msg.MessageReference, depth+1)
 		if err != nil {
 			return nil, err
 		}
