@@ -107,6 +107,11 @@ func run(life *lifecycle.Coordinator) error {
 	if err != nil {
 		return err
 	}
+	life.OnExit(func() {
+		if err := asst.Close(); err != nil {
+			log.Printf("failed to close assistant: %v\n", err)
+		}
+	})
 
 	if grpcAddress != "" {
 		grpcServer, err := grpcserver.NewGRPCServer(asst, serverOptions...)

@@ -2,10 +2,14 @@ package assistant
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache"
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/filetoken"
 )
 
@@ -76,7 +80,7 @@ func TestResolveImagePartWithFileToken(t *testing.T) {
 	}
 
 	t.Run("valid token uses signed uri and mime type", func(t *testing.T) {
-		part, err := clientAt(issuedAt, key).resolveImagePart("image/jpeg", token)
+		part, err := clientAt(issuedAt, key).resolveImagePart(context.Background(), "image/jpeg", token)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,47 +94,111 @@ func TestResolveImagePartWithFileToken(t *testing.T) {
 		client    *Client
 		content   string
 		wantReply string
+		wantErr   error
 	}{
 		{
 			name:      "expired token",
 			client:    clientAt(issuedAt.Add(time.Hour), key),
 			content:   token,
 			wantReply: "An image in this conversation has expired. Please upload it again.",
+			wantErr:   ErrImageExpired,
 		},
 		{
 			name:      "unknown key",
 			client:    clientAt(issuedAt, otherKey),
 			content:   token,
 			wantReply: "The image reference is invalid. Please upload it again.",
+			wantErr:   ErrInvalidImage,
 		},
 		{
 			name:      "tampered token",
 			client:    clientAt(issuedAt, key),
 			content:   token + "x",
 			wantReply: "The image reference is invalid. Please upload it again.",
+			wantErr:   ErrInvalidImage,
 		},
 		{
 			name:      "verifier not configured",
 			client:    &Client{},
 			content:   token,
 			wantReply: "The image reference is invalid. Please upload it again.",
+			wantErr:   ErrInvalidImage,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.client.resolveImagePart("image/png", tt.content)
+			_, err := tt.client.resolveImagePart(context.Background(), "image/png", tt.content)
 			if err == nil {
 				t.Fatal("resolveImagePart() succeeded, want error")
 			}
-			if got := imageErrorReply(err, "fallback"); got != tt.wantReply {
-				t.Errorf("imageErrorReply() = %q, want %q", got, tt.wantReply)
+			reply, classified := classifyImageError(err, "fallback")
+			if reply != tt.wantReply {
+				t.Errorf("classifyImageError() reply = %q, want %q", reply, tt.wantReply)
+			}
+			if !errors.Is(classified, tt.wantErr) {
+				t.Errorf("classifyImageError() error = %v, want %v", classified, tt.wantErr)
+			}
+		})
+	}
+
+	t.Run("expired history image becomes placeholder", func(t *testing.T) {
+		message := &structs.PromptMessage{Parts: []*structs.PromptPart{
+			structs.NewTextPart("look at this"),
+			structs.NewImagePart("image/png", token),
+		}}
+		content, err := clientAt(issuedAt.Add(time.Hour), key).convertMessageToContent(context.Background(), message, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := content.Parts[1].Text; got != unavailableImagePlaceholder {
+			t.Errorf("history image part text = %q, want placeholder", got)
+		}
+	})
+
+	t.Run("expired current image is an error", func(t *testing.T) {
+		message := &structs.PromptMessage{Parts: []*structs.PromptPart{structs.NewImagePart("image/png", token)}}
+		_, err := clientAt(issuedAt.Add(time.Hour), key).convertMessageToContent(context.Background(), message, false)
+		if !errors.Is(err, filetoken.ErrExpired) {
+			t.Fatalf("convertMessageToContent() error = %v, want ErrExpired", err)
+		}
+	})
+}
+
+func TestClassifyImageError(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantReply string
+		wantErr   error
+	}{
+		{name: "file too large", err: fmt.Errorf("fetch: %w", imagecache.ErrFileTooLarge), wantReply: "The image is too large.", wantErr: ErrInvalidImage},
+		{name: "domain not allowed", err: fmt.Errorf("fetch: %w", imagecache.ErrDomainNotAllowed), wantReply: "The image reference is invalid. Please upload it again.", wantErr: ErrInvalidImage},
+		{name: "unsupported scheme", err: fmt.Errorf("fetch: %w", imagecache.ErrUnsupportedScheme), wantReply: "The image reference is invalid. Please upload it again.", wantErr: ErrInvalidImage},
+		{name: "unrelated error keeps fallback", err: errors.New("network down"), wantReply: "fallback"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reply, classified := classifyImageError(tt.err, "fallback")
+			if reply != tt.wantReply {
+				t.Errorf("reply = %q, want %q", reply, tt.wantReply)
+			}
+			if tt.wantErr != nil && !errors.Is(classified, tt.wantErr) {
+				t.Errorf("error = %v, want %v", classified, tt.wantErr)
+			}
+			if tt.wantErr == nil && classified != tt.err {
+				t.Errorf("error = %v, want original %v", classified, tt.err)
+			}
+			if !errors.Is(classified, tt.err) {
+				t.Errorf("classified error lost original cause %v", tt.err)
 			}
 		})
 	}
 }
 
-func TestImageErrorReplyFallback(t *testing.T) {
-	if got := imageErrorReply(errors.New("network down"), "fallback"); got != "fallback" {
-		t.Errorf("imageErrorReply() = %q, want fallback", got)
+func TestUnsupportedPartTypeIsInvalidRequest(t *testing.T) {
+	message := &structs.PromptMessage{Parts: []*structs.PromptPart{{Type: "video", Content: "x"}}}
+	_, err := (&Client{}).convertMessageToContent(context.Background(), message, false)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
 }

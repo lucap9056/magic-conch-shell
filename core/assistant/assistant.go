@@ -51,11 +51,6 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 		return nil, fmt.Errorf("failed to initialize Google AI client: %w", err)
 	}
 
-	imageCache, err := imagecache.NewCache(options.cachePath, client, allowedImageDomains)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize image cache: %w", err)
-	}
-
 	sysInstructions := make(map[languages.Language]string)
 	supportedLanguages := []languages.Language{languages.EN, languages.ZH}
 	for _, lang := range supportedLanguages {
@@ -67,6 +62,11 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 		sysInstructions[lang] = string(data)
 	}
 
+	imageCache, err := imagecache.NewCache(options.cachePath, client, allowedImageDomains)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize image cache: %w", err)
+	}
+
 	return &Client{
 		genaiClient:        client,
 		imageCache:         imageCache,
@@ -74,6 +74,10 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 		systemInstructions: sysInstructions,
 		fileTokenVerifier:  options.fileTokenVerifier,
 	}, nil
+}
+
+func (c *Client) Close() error {
+	return c.imageCache.Close()
 }
 
 func (c *Client) GenerateResponse(ctx context.Context, language languages.Language, newMessage *structs.PromptMessage, historyMessages []*structs.PromptMessage) (string, error) {
@@ -89,18 +93,20 @@ func (c *Client) GenerateResponse(ctx context.Context, language languages.Langua
 	contents := make([]*genai.Content, 0, len(historyMessages)+1)
 
 	for i, historyMessage := range historyMessages {
-		message, err := c.convertMessageToContent(historyMessage)
+		message, err := c.convertMessageToContent(ctx, historyMessage, true)
 		if err != nil {
 			log.Printf("error: failed to convert history message: %v", err)
-			return imageErrorReply(err, "System error: Failed to process conversation history."), fmt.Errorf("failed to convert history message at index %d: %w", i, err)
+			reply, classified := classifyImageError(err, "System error: Failed to process conversation history.")
+			return reply, fmt.Errorf("failed to convert history message at index %d: %w", i, classified)
 		}
 		contents = append(contents, message)
 	}
 
-	msg, err := c.convertMessageToContent(newMessage)
+	msg, err := c.convertMessageToContent(ctx, newMessage, false)
 	if err != nil {
 		log.Printf("error: failed to convert new message: %v", err)
-		return imageErrorReply(err, "System error: Failed to process the user message."), fmt.Errorf("failed to convert new message: %w", err)
+		reply, classified := classifyImageError(err, "System error: Failed to process the user message.")
+		return reply, fmt.Errorf("failed to convert new message: %w", classified)
 	}
 
 	contents = append(contents, msg)
@@ -157,7 +163,7 @@ func (c *Client) VerifyModel(ctx context.Context) error {
 }
 
 // convertMessageToContent maps domain Message structs to Google AI SDK Content structs.
-func (c *Client) convertMessageToContent(message *structs.PromptMessage) (*genai.Content, error) {
+func (c *Client) convertMessageToContent(ctx context.Context, message *structs.PromptMessage, isHistory bool) (*genai.Content, error) {
 	parts := make([]*genai.Part, len(message.Parts))
 
 	for j, part := range message.Parts {
@@ -165,24 +171,31 @@ func (c *Client) convertMessageToContent(message *structs.PromptMessage) (*genai
 		case structs.PartTypeText:
 			parts[j] = genai.NewPartFromText(part.Content)
 		case structs.PartTypeImage:
-			fileData, err := c.resolveImagePart(part.MimeType, part.Content)
+			fileData, err := c.resolveImagePart(ctx, part.MimeType, part.Content)
 			if err != nil {
+				if isHistory && isUnavailableImage(err) {
+					log.Printf("warning: replacing unavailable history image with placeholder: %v", err)
+					parts[j] = genai.NewPartFromText(unavailableImagePlaceholder)
+					continue
+				}
 				return nil, fmt.Errorf("failed to process image part: %w", err)
 			}
 			parts[j] = fileData
 		default:
-			return nil, fmt.Errorf("unsupported part type: %s", part.Type)
+			return nil, fmt.Errorf("%w: unsupported part type: %s", ErrInvalidRequest, part.Type)
 		}
 	}
 
 	return genai.NewContentFromParts(parts, genai.RoleUser), nil
 }
 
+const unavailableImagePlaceholder = "[image no longer available]"
+
 var errFileTokenDisabled = errors.New("file tokens are not enabled")
 
-func (c *Client) resolveImagePart(mimeType string, content string) (*genai.Part, error) {
+func (c *Client) resolveImagePart(ctx context.Context, mimeType string, content string) (*genai.Part, error) {
 	if !filetoken.IsToken(content) {
-		return c.fetchAndCacheFileData(mimeType, content)
+		return c.fetchAndCacheFileData(ctx, mimeType, content)
 	}
 	if c.fileTokenVerifier == nil {
 		return nil, errFileTokenDisabled
@@ -194,23 +207,32 @@ func (c *Client) resolveImagePart(mimeType string, content string) (*genai.Part,
 	return genai.NewPartFromURI(claims.URI, claims.MIMEType), nil
 }
 
-func imageErrorReply(err error, fallback string) string {
+func isUnavailableImage(err error) bool {
+	_, classified := classifyImageError(err, "")
+	return errors.Is(classified, ErrImageExpired) || errors.Is(classified, ErrInvalidImage)
+}
+
+func classifyImageError(err error, fallbackReply string) (string, error) {
 	switch {
 	case errors.Is(err, filetoken.ErrExpired):
-		return "An image in this conversation has expired. Please upload it again."
+		return "An image in this conversation has expired. Please upload it again.", fmt.Errorf("%w: %w", ErrImageExpired, err)
+	case errors.Is(err, imagecache.ErrFileTooLarge):
+		return "The image is too large.", fmt.Errorf("%w: %w", ErrInvalidImage, err)
 	case errors.Is(err, filetoken.ErrMalformed),
 		errors.Is(err, filetoken.ErrInvalidSignature),
 		errors.Is(err, filetoken.ErrUnknownKey),
-		errors.Is(err, errFileTokenDisabled):
-		return "The image reference is invalid. Please upload it again."
+		errors.Is(err, errFileTokenDisabled),
+		errors.Is(err, imagecache.ErrUnsupportedScheme),
+		errors.Is(err, imagecache.ErrDomainNotAllowed):
+		return "The image reference is invalid. Please upload it again.", fmt.Errorf("%w: %w", ErrInvalidImage, err)
 	default:
-		return fallback
+		return fallbackReply, err
 	}
 }
 
 // fetchAndCacheFileData retrieves image data from URL and returns a file URI part for the SDK.
-func (c *Client) fetchAndCacheFileData(mimeType string, url string) (*genai.Part, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+func (c *Client) fetchAndCacheFileData(ctx context.Context, mimeType string, url string) (*genai.Part, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 
 	fileUri, err := c.imageCache.Fetch(ctx, mimeType, url)
@@ -229,11 +251,11 @@ func (c *Client) handleAPIError(err error) (string, error) {
 		log.Printf("error: Google API error: Code %d, Message: %s", gErr.Code, gErr.Message)
 		switch gErr.Code {
 		case 429:
-			return "You are asking too fast! Please wait a moment.", err
+			return "You are asking too fast! Please wait a moment.", fmt.Errorf("%w: %w", ErrRateLimited, err)
 		case 503:
-			return "The AI service is currently overloaded. Try again later.", err
+			return "The AI service is currently overloaded. Try again later.", fmt.Errorf("%w: %w", ErrModelUnavailable, err)
 		case 400:
-			return "Invalid request format sent to AI. Check your input.", err
+			return "Invalid request format sent to AI. Check your input.", fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
 	}
 	log.Printf("error: unexpected communication error: %v", err)
