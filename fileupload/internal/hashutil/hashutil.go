@@ -18,8 +18,3 @@ func SHA256Hex(rs io.ReadSeeker) (string, error) {
 
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-
-func SHA256HexString(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
-}

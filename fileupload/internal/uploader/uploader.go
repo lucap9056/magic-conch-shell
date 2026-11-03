@@ -6,15 +6,14 @@ import (
 	"io"
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
-	"github.com/lucap9056/magic-conch-shell/fileupload/internal/hashutil"
-	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/singleflight"
 )
 
 const (
-	redisKeyPrefix = "image_cache:"
-	cacheTTL       = 24 * time.Hour
+	uploadTimeout  = 30 * time.Second
+	cacheTimeout   = 5 * time.Second
+	cacheTTLSafety = 5 * time.Minute
+	cacheKeyPrefix = "fileupload:token:"
 )
 
 type Message struct {
@@ -22,58 +21,85 @@ type Message struct {
 	MimeType string `json:"mime_type"`
 }
 
-type Uploader struct {
-	redisClient *redis.Client
-	genaiClient *genai.Client
-	rdxHostname string
-	group       singleflight.Group
+type FileStore interface {
+	Upload(ctx context.Context, file io.Reader, mimeType string) (string, error)
 }
 
-func New(redisClient *redis.Client, genaiClient *genai.Client, rdxHostname string) *Uploader {
+type TokenSigner interface {
+	Sign(uri, mimeType string) (string, error)
+}
+
+type TokenCache interface {
+	Get(ctx context.Context, key string) (string, bool, error)
+	Set(ctx context.Context, key string, token string, ttl time.Duration) error
+}
+
+type Uploader struct {
+	store    FileStore
+	signer   TokenSigner
+	cache    TokenCache
+	cacheTTL time.Duration
+	group    singleflight.Group
+}
+
+func New(store FileStore, signer TokenSigner, cache TokenCache, tokenTTL time.Duration) *Uploader {
 	return &Uploader{
-		redisClient: redisClient,
-		genaiClient: genaiClient,
-		rdxHostname: rdxHostname,
+		store:    store,
+		signer:   signer,
+		cache:    cache,
+		cacheTTL: tokenTTL - cacheTTLSafety,
 	}
 }
 
-func (u *Uploader) Upload(file io.Reader, mimeType, fileHash string) (*Message, error) {
-	rdxKey := "rdx://" + u.rdxHostname + "/" + fileHash
-	cacheKey := redisKeyPrefix + hashutil.SHA256HexString(rdxKey)
+func (u *Uploader) Upload(ctx context.Context, file io.Reader, mimeType, fileHash string) (*Message, error) {
+	cacheKey := cacheKeyPrefix + mimeType + ":" + fileHash
 
-	v, err, _ := u.group.Do(fileHash, func() (any, error) {
-		getCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, getErr := u.redisClient.Get(getCtx, cacheKey).Result()
-		cancel()
-		switch getErr {
-		case nil:
-			return &Message{Key: rdxKey, MimeType: mimeType}, nil
-		case redis.Nil:
-		default:
-			return nil, fmt.Errorf("redis lookup failed: %w", getErr)
+	v, err, _ := u.group.Do(cacheKey, func() (any, error) {
+		detached := context.WithoutCancel(ctx)
+
+		if token, found, err := u.lookup(detached, cacheKey); err != nil {
+			return nil, err
+		} else if found {
+			return &Message{Key: token, MimeType: mimeType}, nil
 		}
 
-		uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		uploadCtx, cancel := context.WithTimeout(detached, uploadTimeout)
 		defer cancel()
-
-		geminiFile, upErr := u.genaiClient.UploadFile(uploadCtx, "", file, &genai.UploadFileOptions{
-			MIMEType: mimeType,
-		})
-		if upErr != nil {
-			return nil, fmt.Errorf("upload to gemini failed: %w", upErr)
+		uri, err := u.store.Upload(uploadCtx, file, mimeType)
+		if err != nil {
+			return nil, fmt.Errorf("upload to gemini failed: %w", err)
 		}
 
-		setCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if setErr := u.redisClient.Set(setCtx, cacheKey, geminiFile.URI, cacheTTL).Err(); setErr != nil {
-			return nil, fmt.Errorf("redis store failed: %w", setErr)
+		token, err := u.signer.Sign(uri, mimeType)
+		if err != nil {
+			return nil, fmt.Errorf("sign file token failed: %w", err)
 		}
 
-		return Message{Key: rdxKey, MimeType: mimeType}, nil
+		if u.cache != nil && u.cacheTTL > 0 {
+			setCtx, cancel := context.WithTimeout(detached, cacheTimeout)
+			defer cancel()
+			if err := u.cache.Set(setCtx, cacheKey, token, u.cacheTTL); err != nil {
+				return nil, fmt.Errorf("cache store failed: %w", err)
+			}
+		}
+
+		return &Message{Key: token, MimeType: mimeType}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return v.(*Message), nil
+}
+
+func (u *Uploader) lookup(ctx context.Context, cacheKey string) (string, bool, error) {
+	if u.cache == nil {
+		return "", false, nil
+	}
+	getCtx, cancel := context.WithTimeout(ctx, cacheTimeout)
+	defer cancel()
+	token, found, err := u.cache.Get(getCtx, cacheKey)
+	if err != nil {
+		return "", false, fmt.Errorf("cache lookup failed: %w", err)
+	}
+	return token, found, nil
 }

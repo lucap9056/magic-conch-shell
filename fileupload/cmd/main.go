@@ -2,137 +2,92 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
-	"github.com/lucap9056/go-envfile/envfile"
-	"github.com/lucap9056/go-lifecycle/lifecycle"
-	"github.com/lucap9056/magic-conch-shell/fileupload/internal/hashutil"
-	"github.com/lucap9056/magic-conch-shell/fileupload/internal/mimetype"
+	"github.com/lucap9056/magic-conch-shell/filetoken"
 	"github.com/lucap9056/magic-conch-shell/fileupload/internal/uploader"
 	"github.com/lucap9056/magic-conch-shell/httpserver/httputil"
-	"github.com/redis/go-redis/v9"
-	"google.golang.org/api/option"
-)
 
-const (
-	maxFileSize        = 20 * 1024 * 1024
-	defaultRdxHostname = "rediscache"
+	"github.com/lucap9056/go-lifecycle/v2/lifecycle"
+	"github.com/lucap9056/go-lifecycle/v2/runner"
+	"github.com/redis/go-redis/v9"
+	"google.golang.org/genai"
 )
 
 type Config struct {
 	HTTPAddress  string
 	GeminiAPIKey string
 	RedisURL     string
-	RdxHostname  string
-	CROSOrigins  string
+	FileTokenKey string
+	CORSOrigins  string
 }
 
 func loadConfig() Config {
-	rdxHostname := os.Getenv("RDX_HOSTNAME")
-	if rdxHostname == "" {
-		rdxHostname = defaultRdxHostname
-	}
 	return Config{
 		HTTPAddress:  os.Getenv("HTTP_ADDRESS"),
 		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
 		RedisURL:     os.Getenv("REDIS_URL"),
-		RdxHostname:  rdxHostname,
-		CROSOrigins:  os.Getenv("CORS_ALLOWED_ORIGINS"),
+		FileTokenKey: os.Getenv("FILE_TOKEN_KEY"),
+		CORSOrigins:  os.Getenv("CORS_ALLOWED_ORIGINS"),
 	}
-}
-
-type Response[T any] struct {
-	Success bool `json:"success"`
-	Message T    `json:"message"`
 }
 
 func main() {
-	envfile.Load()
-	life := lifecycle.New()
+	if err := runner.Run(run); err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+}
 
+func run(life *lifecycle.Coordinator) error {
 	cfg := loadConfig()
 
-	ctx := context.Background()
-
-	genaiClient, err := genai.NewClient(ctx, option.WithAPIKey(cfg.GeminiAPIKey))
+	key, err := filetoken.ParseKey(cfg.FileTokenKey)
 	if err != nil {
-		life.Exitln(err.Error())
-		return
+		return fmt.Errorf("invalid FILE_TOKEN_KEY: %w", err)
 	}
-	defer genaiClient.Close()
-
-	redisOpts, err := redis.ParseURL(cfg.RedisURL)
+	signer, err := filetoken.NewSigner(key)
 	if err != nil {
-		life.Exitln(err.Error())
-		return
+		return fmt.Errorf("invalid FILE_TOKEN_KEY: %w", err)
 	}
-	redisClient := redis.NewClient(redisOpts)
-	defer redisClient.Close()
 
-	imgUploader := uploader.New(redisClient, genaiClient, cfg.RdxHostname)
-
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+	genaiClient, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+		APIKey:  cfg.GeminiAPIKey,
+		Backend: genai.BackendGeminiAPI,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize Google AI client: %w", err)
+	}
 
-	mux.HandleFunc("POST /upload", func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
-		if err := r.ParseMultipartForm(maxFileSize); err != nil {
-			sendJSON(w, r, false, "file too large or invalid multipart form", http.StatusBadRequest)
-			return
-		}
-
-		file, header, err := r.FormFile("file")
+	var tokenCache uploader.TokenCache
+	if cfg.RedisURL != "" {
+		redisOpts, err := redis.ParseURL(cfg.RedisURL)
 		if err != nil {
-			sendJSON(w, r, false, "missing file field", http.StatusBadRequest)
-			return
+			return fmt.Errorf("invalid REDIS_URL: %w", err)
 		}
-		defer file.Close()
+		redisClient := redis.NewClient(redisOpts)
+		life.OnExit(func() {
+			if err := redisClient.Close(); err != nil {
+				log.Println(err)
+			}
+		})
+		tokenCache = uploader.NewRedisTokenCache(redisClient)
+	}
 
-		mimeType, err := mimetype.Detect(file, header.Filename)
-		if err != nil {
-			sendJSON(w, r, false, fmt.Sprintf("failed to read file: %v", err), http.StatusInternalServerError)
-			return
-		}
-		if !mimetype.IsAllowed(mimeType) {
-			sendJSON(w, r, false, fmt.Sprintf("unsupported file type: %s. Only PNG, JPEG, WEBP, HEIF, and HEIC are allowed", mimeType), http.StatusBadRequest)
-			return
-		}
-
-		fileHash, err := hashutil.SHA256Hex(file)
-		if err != nil {
-			sendJSON(w, r, false, fmt.Sprintf("failed to hash file: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		uploadMsg, err := imgUploader.Upload(file, mimeType, fileHash)
-		if err != nil {
-			sendJSON(w, r, false, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		sendJSON(w, r, true, uploadMsg, http.StatusOK)
-	})
+	imgUploader := uploader.New(uploader.NewGeminiStore(genaiClient), signer, tokenCache, filetoken.DefaultTTL)
 
 	listener, err := httputil.NewListener(cfg.HTTPAddress)
 	if err != nil {
-		life.Exitln(err.Error())
-		return
+		return err
 	}
-	defer listener.Close()
 
 	server := &http.Server{
 		Addr:         cfg.HTTPAddress,
-		Handler:      httputil.CORS(mux, cfg.CROSOrigins),
+		Handler:      httputil.CORS(newMux(imgUploader), cfg.CORSOrigins),
 		ReadTimeout:  35 * time.Second,
 		WriteTimeout: 40 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -153,16 +108,5 @@ func main() {
 		}
 	})
 
-	life.Wait()
-}
-
-func sendJSON[T any](w http.ResponseWriter, r *http.Request, success bool, message T, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	if code == http.StatusInternalServerError {
-		log.Printf("[ERROR] %s %s (%s): %v", r.Method, r.URL.Path, r.RemoteAddr, message)
-		json.NewEncoder(w).Encode(Response[string]{Success: false, Message: "internal server error"})
-		return
-	}
-	json.NewEncoder(w).Encode(Response[T]{Success: success, Message: message})
+	return nil
 }
