@@ -4,11 +4,9 @@ go 1.27
 
 require (
 	github.com/dgraph-io/badger/v4 v4.9.2
-	github.com/lucap9056/go-envfile v1.1.0
-	github.com/lucap9056/go-lifecycle v1.2.0
+	github.com/lucap9056/go-lifecycle/v2 v2.0.0
 	github.com/lucap9056/magic-conch-shell/httpserver/httputil v1.0.1
 	github.com/redis/go-redis/v9 v9.21.0
-	github.com/yuin/gopher-lua v1.1.1
 	google.golang.org/genai v1.77.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12

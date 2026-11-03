@@ -15,17 +15,20 @@ import (
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 
-	"github.com/lucap9056/go-envfile/envfile"
-	"github.com/lucap9056/go-lifecycle/lifecycle"
+	"github.com/lucap9056/go-lifecycle/v2/lifecycle"
+	"github.com/lucap9056/go-lifecycle/v2/runner"
 
 	"google.golang.org/grpc/keepalive"
 )
 
 func main() {
-	envfile.Load()
+	if err := runner.Run(run); err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+}
 
-	life := lifecycle.New()
-
+func run(life *lifecycle.Coordinator) error {
 	apiKey := os.Getenv("LLM_API_KEY")
 	modelName := os.Getenv("MODEL_NAME")
 	consoleMode := os.Getenv("CONSOLE_MODE")
@@ -89,15 +92,13 @@ func main() {
 	}
 	asst, err := assistant.NewClient(apiKey, modelName, allowedImageDomains, options...)
 	if err != nil {
-		life.Exitln(err)
-		return
+		return err
 	}
 
 	if grpcAddress != "" {
 		grpcServer, err := grpcserver.NewGRPCServer(asst, serverOptions...)
 		if err != nil {
-			life.Exitln(err)
-			return
+			return err
 		}
 		go func() {
 			log.Printf("[gRPC Server] Listening on %s\n", grpcAddress)
@@ -107,12 +108,11 @@ func main() {
 				life.Exitln(err)
 			}
 		}()
-		defer grpcServer.Stop()
+		life.OnExit(grpcServer.Stop)
 	}
 
 	if err := verifyModel(asst); err != nil {
-		life.Exitln(err)
-		return
+		return err
 	}
 	log.Printf("Model verified: %s\n", modelName)
 
@@ -120,10 +120,10 @@ func main() {
 		go runConsoleMode(asst, life)
 	}
 
-	life.Wait()
+	return nil
 }
 
-func runConsoleMode(asst *assistant.Client, life *lifecycle.LifecycleManager) {
+func runConsoleMode(asst *assistant.Client, life *lifecycle.Coordinator) {
 	fmt.Println("--- Console Mode Enabled (Type 'exit' or 'quit' to stop) ---")
 	language, _ := languages.Parse(os.Getenv("LANG"))
 

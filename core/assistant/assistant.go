@@ -13,12 +13,10 @@ import (
 
 	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache"
 
-	"github.com/lucap9056/magic-conch-shell/core/v3/assistant/luascript"
 	"github.com/lucap9056/magic-conch-shell/core/v3/assistant/randomizer"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 
-	lua "github.com/yuin/gopher-lua"
 	"google.golang.org/genai"
 )
 
@@ -31,7 +29,6 @@ type Client struct {
 	imageCache         *imagecache.Cache
 	modelName          string
 	systemInstructions map[languages.Language]string
-	luaRuntimeScript   string
 }
 
 // NewClient initializes a new LLM client with a predefined system prompt and conversation history.
@@ -73,7 +70,6 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 		imageCache:         imageCache,
 		modelName:          modelName,
 		systemInstructions: sysInstructions,
-		luaRuntimeScript:   luascript.GetScript(),
 	}, nil
 }
 
@@ -157,62 +153,6 @@ func (c *Client) VerifyModel(ctx context.Context) error {
 	return fmt.Errorf("model %q is not available for this API key", c.modelName)
 }
 
-func (c *Client) safeExecuteLua(luaCode string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	L := lua.NewState(lua.Options{
-		SkipOpenLibs:        true,
-		CallStackSize:       128,
-		MinimizeStackMemory: true,
-	})
-	defer L.Close()
-	L.SetContext(ctx)
-
-	L.SetMx(10 * 1024 * 1024)
-
-	libs := []lua.LGFunction{
-		lua.OpenBase,
-		lua.OpenTable,
-		lua.OpenString,
-		lua.OpenMath,
-	}
-	for _, openFn := range libs {
-		L.Push(L.NewFunction(openFn))
-		if err := L.PCall(0, 0, nil); err != nil {
-			return "Failed to load Lua libraries.", err
-		}
-	}
-
-	mathLib := L.GetGlobal("math")
-	if mathTable, ok := mathLib.(*lua.LTable); ok {
-		randomseedFn := L.GetField(mathTable, "randomseed")
-		err := L.CallByParam(lua.P{
-			Fn:      randomseedFn,
-			NRet:    0,
-			Protect: true,
-		}, lua.LNumber(time.Now().UnixNano()%1e9))
-		if err != nil {
-			return "Failed to initialize random number generator.", err
-		}
-	} else {
-		return "Failed to initialize random number generator.", errors.New("math library is not a table")
-	}
-
-	if err := L.DoString(c.luaRuntimeScript); err != nil {
-		return "Failed to initialize execution engine.", err
-	}
-
-	if err := L.DoString(luaCode); err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "Script timed out.", err
-		}
-		return "Failed to process selection logic.", err
-	}
-
-	return c.parseLuaResults(L)
-}
-
 // convertMessageToContent maps domain Message structs to Google AI SDK Content structs.
 func (c *Client) convertMessageToContent(message *structs.PromptMessage) (*genai.Content, error) {
 	parts := make([]*genai.Part, len(message.Parts))
@@ -265,39 +205,4 @@ func (c *Client) handleAPIError(err error) (string, error) {
 	}
 	log.Printf("error: unexpected communication error: %v", err)
 	return "An unexpected error occurred while communicating with the AI.", err
-}
-
-// parseLuaResults iterates through the Lua global table 'global_result' and formats it as a string.
-func (c *Client) parseLuaResults(L *lua.LState) (string, error) {
-	resultTable := L.GetGlobal("global_result")
-	table, ok := resultTable.(*lua.LTable)
-
-	if !ok || table.Len() == 0 {
-		return "No options were generated.", nil
-	}
-
-	var output strings.Builder
-	table.ForEach(func(_, val lua.LValue) {
-		if lineTable, ok := val.(*lua.LTable); ok {
-			if output.Len() > 0 {
-				output.WriteByte('\n')
-			}
-
-			isFirstInLine := true
-			lineTable.ForEach(func(_, item lua.LValue) {
-				if !isFirstInLine {
-					output.WriteByte(' ')
-				}
-				output.WriteString(item.String())
-				isFirstInLine = false
-			})
-		}
-	})
-
-	finalStr := output.String()
-	if finalStr == "" {
-		return "The shell is empty. Try a different question.", nil
-	}
-
-	return finalStr, nil
 }
