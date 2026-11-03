@@ -3,6 +3,8 @@ package languages
 import (
 	"regexp"
 	"strings"
+
+	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 )
 
 type Language = string
@@ -24,5 +26,27 @@ func Parse(s string) (Language, bool) {
 		return ZH, true
 	default:
 		return EN, false
+	}
+}
+
+func FromProto(lang structs.Language) (Language, bool) {
+	switch lang {
+	case structs.Language_LANGUAGE_EN:
+		return EN, true
+	case structs.Language_LANGUAGE_ZH:
+		return ZH, true
+	default:
+		return EN, false
+	}
+}
+
+func ToProto(lang Language) structs.Language {
+	switch lang {
+	case EN:
+		return structs.Language_LANGUAGE_EN
+	case ZH:
+		return structs.Language_LANGUAGE_ZH
+	default:
+		return structs.Language_LANGUAGE_UNSPECIFIED
 	}
 }

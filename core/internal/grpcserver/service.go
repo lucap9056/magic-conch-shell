@@ -23,12 +23,16 @@ func NewService(asst AssistantClient) *AssistantService {
 
 func (s *AssistantService) Chat(ctx context.Context, req *structs.Request) (*structs.Response, error) {
 
-	language, _ := languages.Parse(req.Language)
-	reply, err := s.asst.GenerateResponse(ctx, language, req.CurrentMessage, req.HistoryMessages)
+	reply, err := s.asst.GenerateResponse(ctx, resolveLanguage(req), req.CurrentMessage, req.HistoryMessages)
 	if err != nil {
 		log.Printf("[gRPC Server] Error: %v\n", err)
 		return nil, toStatusError(err, reply)
 	}
 
 	return &structs.Response{Reply: reply}, nil
+}
+
+func resolveLanguage(req *structs.Request) languages.Language {
+	language, _ := languages.FromProto(req.GetLanguage())
+	return language
 }

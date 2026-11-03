@@ -76,25 +76,26 @@ func TestChat(t *testing.T) {
 	}
 }
 
-func TestChatNormalizesLanguage(t *testing.T) {
-	tests := map[string]languages.Language{
-		"en":    languages.EN,
-		"EN":    languages.EN,
-		"zh":    languages.ZH,
-		"zh-TW": languages.ZH,
-		"zh_CN": languages.ZH,
-		"fr":    languages.EN,
-		"":      languages.EN,
+func TestChatLanguage(t *testing.T) {
+	tests := []struct {
+		name string
+		lang structs.Language
+		want languages.Language
+	}{
+		{name: "en", lang: structs.Language_LANGUAGE_EN, want: languages.EN},
+		{name: "zh", lang: structs.Language_LANGUAGE_ZH, want: languages.ZH},
+		{name: "unspecified defaults to en", lang: structs.Language_LANGUAGE_UNSPECIFIED, want: languages.EN},
+		{name: "unknown value defaults to en", lang: structs.Language(99), want: languages.EN},
 	}
-	for input, want := range tests {
-		t.Run(input, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockAssistantClient{}
-			req := &structs.Request{Language: input, CurrentMessage: &structs.PromptMessage{}}
+			req := &structs.Request{Language: tt.lang, CurrentMessage: &structs.PromptMessage{}}
 			if _, err := NewService(mock).Chat(context.Background(), req); err != nil {
 				t.Fatal(err)
 			}
-			if mock.gotLanguage != want {
-				t.Errorf("language %q forwarded as %q, want %q", input, mock.gotLanguage, want)
+			if mock.gotLanguage != tt.want {
+				t.Errorf("forwarded language = %q, want %q", mock.gotLanguage, tt.want)
 			}
 		})
 	}
