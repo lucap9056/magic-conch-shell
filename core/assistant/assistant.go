@@ -21,10 +21,8 @@ import (
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 
-	"github.com/google/generative-ai-go/genai"
 	lua "github.com/yuin/gopher-lua"
-	"google.golang.org/api/googleapi"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 //go:embed systemInstruction
@@ -49,7 +47,10 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	// Initialize Google AI SDK
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Google AI client: %w", err)
 	}
@@ -82,16 +83,13 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 // GenerateResponse sends a message (and optional images) to the LLM and processes the Lua-formatted output.
 func (c *Client) GenerateResponse(ctx context.Context, language languages.Language, newMessage *structs.PromptMessage, historyMessages []*structs.PromptMessage) (string, error) {
 
-	model := c.genaiClient.GenerativeModel(c.modelName)
-
-	model.SystemInstruction = &genai.Content{
-		Role:  "system",
-		Parts: []genai.Part{genai.Text(c.systemInstructions[language])},
+	config := &genai.GenerateContentConfig{
+		SystemInstruction: &genai.Content{
+			Parts: []*genai.Part{genai.NewPartFromText(c.systemInstructions[language])},
+		},
 	}
 
-	chat := model.StartChat()
-
-	chat.History = make([]*genai.Content, len(historyMessages))
+	contents := make([]*genai.Content, 0, len(historyMessages)+1)
 
 	for i, historyMessage := range historyMessages {
 		message, err := c.convertMessageToContent(historyMessage)
@@ -99,7 +97,7 @@ func (c *Client) GenerateResponse(ctx context.Context, language languages.Langua
 			log.Printf("error: failed to convert history message: %v", err)
 			return "System error: Failed to process conversation history.", fmt.Errorf("failed to convert history message at index %d: %w", i, err)
 		}
-		chat.History[i] = message
+		contents = append(contents, message)
 	}
 
 	msg, err := c.convertMessageToContent(newMessage)
@@ -108,22 +106,24 @@ func (c *Client) GenerateResponse(ctx context.Context, language languages.Langua
 		return "System error: Failed to process the user message.", fmt.Errorf("failed to convert new message: %w", err)
 	}
 
+	contents = append(contents, msg)
+
 	// Request generation from Gemini
-	resp, err := chat.SendMessage(ctx, msg.Parts...)
+	resp, err := c.genaiClient.Models.GenerateContent(ctx, c.modelName, contents, config)
 	if err != nil {
 		return c.handleAPIError(err)
 	}
 
 	// Validate response content
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
 		return "The shell remains silent. Please try rephrasing your question.", nil
 	}
 
 	// Extract text from parts
 	var sb strings.Builder
 	for _, part := range resp.Candidates[0].Content.Parts {
-		if text, ok := part.(genai.Text); ok {
-			sb.WriteString(string(text))
+		if part != nil && !part.Thought {
+			sb.WriteString(part.Text)
 		}
 	}
 
@@ -193,12 +193,12 @@ func (c *Client) safeExecuteLua(luaCode string) (string, error) {
 
 // convertMessageToContent maps domain Message structs to Google AI SDK Content structs.
 func (c *Client) convertMessageToContent(message *structs.PromptMessage) (*genai.Content, error) {
-	parts := make([]genai.Part, len(message.Parts))
+	parts := make([]*genai.Part, len(message.Parts))
 
 	for j, part := range message.Parts {
 		switch part.Type {
 		case structs.PartTypeText:
-			parts[j] = genai.Text(part.Content)
+			parts[j] = genai.NewPartFromText(part.Content)
 		case structs.PartTypeImage:
 			fileData, err := c.fetchAndCacheFileData(part.MimeType, part.Content)
 			if err != nil {
@@ -210,34 +210,26 @@ func (c *Client) convertMessageToContent(message *structs.PromptMessage) (*genai
 		}
 	}
 
-	role := "user"
-
-	return &genai.Content{
-		Role:  role,
-		Parts: parts,
-	}, nil
+	return genai.NewContentFromParts(parts, genai.RoleUser), nil
 }
 
-// fetchAndCacheFileData retrieves image data from URL and returns a FileData struct for the SDK.
-func (c *Client) fetchAndCacheFileData(mimeType string, url string) (genai.FileData, error) {
+// fetchAndCacheFileData retrieves image data from URL and returns a file URI part for the SDK.
+func (c *Client) fetchAndCacheFileData(mimeType string, url string) (*genai.Part, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
 	fileUri, err := c.imageCache.Fetch(ctx, mimeType, url)
 	if err != nil {
 		log.Printf("error: failed to fetch file data from cache for URL %s: %v", url, err)
-		return genai.FileData{}, fmt.Errorf("failed to fetch file data from cache: %w", err)
+		return nil, fmt.Errorf("failed to fetch file data from cache: %w", err)
 	}
 
-	return genai.FileData{
-		MIMEType: mimeType,
-		URI:      fileUri,
-	}, nil
+	return genai.NewPartFromURI(fileUri, mimeType), nil
 }
 
 // handleAPIError converts Google API errors into user-friendly messages and logs technical details.
 func (c *Client) handleAPIError(err error) (string, error) {
-	var gErr *googleapi.Error
+	var gErr genai.APIError
 	if errors.As(err, &gErr) {
 		log.Printf("error: Google API error: Code %d, Message: %s", gErr.Code, gErr.Message)
 		switch gErr.Code {

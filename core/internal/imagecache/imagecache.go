@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
 	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache/embedcache"
 	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache/rediscache"
+	"google.golang.org/genai"
 )
 
 const expiration = 24 * time.Hour
@@ -112,7 +112,7 @@ func (c *Cache) downloadAndUploadToGemini(ctx context.Context, mimeType string, 
 
 	limitReader := io.LimitReader(resp.Body, c.maxFileSize)
 
-	file, err := c.client.UploadFile(ctx, "", limitReader, &genai.UploadFileOptions{
+	file, err := c.client.Files.Upload(ctx, limitReader, &genai.UploadFileConfig{
 		DisplayName: key,
 		MIMEType:    mimeType,
 	})
