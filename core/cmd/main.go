@@ -110,15 +110,11 @@ func main() {
 		defer grpcServer.Stop()
 	}
 
-	{
-		result, err := assistantTest(asst)
-		if err != nil {
-			life.Exitln(err)
-			return
-		}
-
-		log.Println("LLM test successful, response:", result)
+	if err := verifyModel(asst); err != nil {
+		life.Exitln(err)
+		return
 	}
+	log.Printf("Model verified: %s\n", modelName)
 
 	if consoleMode == "true" {
 		go runConsoleMode(asst, life)
@@ -195,17 +191,12 @@ func runConsoleMode(asst *assistant.Client, life *lifecycle.LifecycleManager) {
 	}
 }
 
-func assistantTest(llm *assistant.Client) (string, error) {
+func verifyModel(llm *assistant.Client) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
-	message := &structs.PromptMessage{
-		Parts: []*structs.PromptPart{structs.NewTextPart("Ok or Fail")},
+	if err := llm.VerifyModel(ctx); err != nil {
+		return fmt.Errorf("model verification failed: %w", err)
 	}
-	reply, err := llm.GenerateResponse(ctx, languages.EN, message, nil)
-	if err != nil {
-		return "", fmt.Errorf("Assistant Post error: %w", err)
-	}
-
-	return reply, nil
+	return nil
 }

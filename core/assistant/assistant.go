@@ -135,6 +135,19 @@ func (c *Client) GenerateResponse(ctx context.Context, language languages.Langua
 	return c.safeExecuteLua(llmOutput)
 }
 
+func (c *Client) VerifyModel(ctx context.Context) error {
+	target := strings.TrimPrefix(c.modelName, "models/")
+	for model, err := range c.genaiClient.Models.All(ctx) {
+		if err != nil {
+			return fmt.Errorf("failed to list models: %w", err)
+		}
+		if strings.TrimPrefix(model.Name, "models/") == target {
+			return nil
+		}
+	}
+	return fmt.Errorf("model %q is not available for this API key", c.modelName)
+}
+
 func (c *Client) safeExecuteLua(luaCode string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
