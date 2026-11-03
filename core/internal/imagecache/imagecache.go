@@ -19,7 +19,11 @@ import (
 
 const expiration = 24 * time.Hour
 
-var ErrFileTooLarge = errors.New("file is too large")
+var (
+	ErrFileTooLarge      = errors.New("file is too large")
+	ErrUnsupportedScheme = errors.New("unsupported url scheme")
+	ErrDomainNotAllowed  = errors.New("domain is not in whitelist")
+)
 
 type Database interface {
 	Get(key string) (string, error)
@@ -41,17 +45,12 @@ func NewCache(path string, client *genai.Client, allowedDomains string) (*Cache,
 		return nil, err
 	}
 
-	var whitelist *DomainWhitelist
-	if domains := strings.Split(allowedDomains, ","); len(domains) > 0 {
-		whitelist = NewDomainWhitelist(domains)
-	}
-
 	return &Cache{
 		db:          db,
 		client:      client,
 		expiration:  24 * time.Hour,
 		maxFileSize: 20 * 1024 * 1024,
-		whitelist:   whitelist,
+		whitelist:   ParseDomainWhitelist(allowedDomains),
 	}, nil
 }
 
@@ -72,10 +71,10 @@ func (c *Cache) Fetch(ctx context.Context, mimeType string, urlString string) (s
 		return "", fmt.Errorf("invalid url format: %w", err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("unsupported url scheme %q", u.Scheme)
+		return "", fmt.Errorf("%w: %q", ErrUnsupportedScheme, u.Scheme)
 	}
 	if !c.whitelist.IsAllowed(u.Hostname()) {
-		return "", fmt.Errorf("domain %s is not in whitelist", u.Hostname())
+		return "", fmt.Errorf("%w: %s", ErrDomainNotAllowed, u.Hostname())
 	}
 
 	key, err := c.urlToKey(u)
@@ -87,7 +86,7 @@ func (c *Cache) Fetch(ctx context.Context, mimeType string, urlString string) (s
 	if err == nil {
 		return fileURI, nil
 	}
-	if err != os.ErrNotExist {
+	if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("db error: %w", err)
 	}
 
