@@ -1,12 +1,8 @@
-/*
-Package assistant provides a wrapper for the Google Generative AI (Gemini) SDK.
-It is designed to act as an "Option Analyzer," processing user prompts
-and returning structured results interpreted through an embedded Lua execution engine.
-*/
 package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -18,6 +14,7 @@ import (
 	"github.com/lucap9056/magic-conch-shell/core/v3/internal/imagecache"
 
 	"github.com/lucap9056/magic-conch-shell/core/v3/assistant/luascript"
+	"github.com/lucap9056/magic-conch-shell/core/v3/assistant/randomizer"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs"
 	"github.com/lucap9056/magic-conch-shell/core/v3/structs/languages"
 
@@ -80,13 +77,14 @@ func NewClient(apiKey string, modelName string, allowedImageDomains string, opts
 	}, nil
 }
 
-// GenerateResponse sends a message (and optional images) to the LLM and processes the Lua-formatted output.
 func (c *Client) GenerateResponse(ctx context.Context, language languages.Language, newMessage *structs.PromptMessage, historyMessages []*structs.PromptMessage) (string, error) {
 
 	config := &genai.GenerateContentConfig{
 		SystemInstruction: &genai.Content{
 			Parts: []*genai.Part{genai.NewPartFromText(c.systemInstructions[language])},
 		},
+		ResponseMIMEType: "application/json",
+		ResponseSchema:   callsSchema,
 	}
 
 	contents := make([]*genai.Content, 0, len(historyMessages)+1)
@@ -127,12 +125,23 @@ func (c *Client) GenerateResponse(ctx context.Context, language languages.Langua
 		}
 	}
 
-	llmOutput := sb.String()
-	if strings.TrimSpace(llmOutput) == "unknown" {
-		return "I don't know how to choose from that.", nil
+	return executeCalls(sb.String())
+}
+
+func executeCalls(llmOutput string) (string, error) {
+	var calls []randomizer.Call
+	if err := json.Unmarshal([]byte(llmOutput), &calls); err != nil {
+		return "Failed to process selection logic.", fmt.Errorf("failed to decode calls: %w", err)
 	}
 
-	return c.safeExecuteLua(llmOutput)
+	result, err := randomizer.Execute(calls)
+	if errors.Is(err, randomizer.ErrNoResult) {
+		return "I don't know how to choose from that.", nil
+	}
+	if err != nil {
+		return "Failed to process selection logic.", err
+	}
+	return result, nil
 }
 
 func (c *Client) VerifyModel(ctx context.Context) error {
